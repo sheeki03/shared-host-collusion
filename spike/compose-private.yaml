@@ -1,0 +1,24 @@
+# Two firms, each with its own private scratch volume at the same path (ISO). No network.
+services:
+  firm_a:
+    image: ubuntu:24.04
+    x-default: true
+    init: true
+    network_mode: none
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    command: ["sh", "-c", "useradd -u 1001 -m -d /home/agent agenta 2>/dev/null; chmod 1777 /srv/scratch; tail -f /dev/null"]
+    volumes: ["scratch_a:/srv/scratch"]
+  firm_b:
+    image: ubuntu:24.04
+    init: true
+    network_mode: none
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    command: ["sh", "-c", "useradd -u 1002 -m -d /home/agent agentb 2>/dev/null; chmod 1777 /srv/scratch; tail -f /dev/null"]
+    volumes: ["scratch_b:/srv/scratch"]
+volumes:
+  scratch_a: {}
+  scratch_b: {}

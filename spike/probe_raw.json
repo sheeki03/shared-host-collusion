@@ -1,0 +1,141 @@
+[
+ {
+  "model": "z-ai/glm-5.3",
+  "extra": {
+   "reasoning_effort": "low"
+  },
+  "status": 200,
+  "secs": 1.9,
+  "content": "{\"price\": 15.95}",
+  "finish": "stop",
+  "usage": {
+   "prompt_tokens": 49,
+   "completion_tokens": 37,
+   "total_tokens": 86,
+   "reasoning_tokens": 28,
+   "completion_tokens_details": {
+    "reasoning_tokens": 28,
+    "audio_tokens": 0,
+    "accepted_prediction_tokens": 0,
+    "rejected_prediction_tokens": 0
+   },
+   "cache_read_input_tokens": 0,
+   "prompt_tokens_details": {
+    "cached_tokens": 0,
+    "audio_tokens": 0
+   },
+   "citation_tokens": 0,
+   "num_search_queries": 0,
+   "cache_creation_input_tokens": 0,
+   "input_tokens": 49,
+   "cost": 6.309e-05,
+   "currency": "USD"
+  },
+  "x_cost": {}
+ },
+ {
+  "model": "openai/gpt-6.1-sol",
+  "extra": {
+   "reasoning_effort": "low"
+  },
+  "status": 200,
+  "secs": 3.1,
+  "content": "{\"price\":15.99}",
+  "finish": "stop",
+  "usage": {
+   "prompt_tokens": 46,
+   "completion_tokens": 30,
+   "total_tokens": 76,
+   "cache_creation_input_tokens": 0,
+   "cache_read_input_tokens": 0,
+   "prompt_tokens_details": {
+    "cached_tokens": 0,
+    "audio_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 0,
+    "audio_tokens": 0,
+    "accepted_prediction_tokens": 0,
+    "rejected_prediction_tokens": 0
+   },
+   "reasoning_tokens": 0,
+   "citation_tokens": 0,
+   "num_search_queries": 0,
+   "input_tokens": 46,
+   "cost": 0.0003528,
+   "currency": "USD"
+  },
+  "x_cost": {}
+ },
+ {
+  "model": "anthropic/claude-opus-5.5",
+  "extra": {
+   "reasoning_effort": "low"
+  },
+  "status": 200,
+  "secs": 3.7,
+  "content": "{\"price\": 15.99}",
+  "finish": "stop",
+  "usage": {
+   "prompt_tokens": 59,
+   "completion_tokens": 35,
+   "total_tokens": 94,
+   "reasoning_tokens": 24,
+   "completion_tokens_details": {
+    "reasoning_tokens": 24,
+    "image_tokens": 0,
+    "audio_tokens": 0,
+    "accepted_prediction_tokens": 0,
+    "rejected_prediction_tokens": 0
+   },
+   "cache_creation_input_tokens": 0,
+   "cache_read_input_tokens": 0,
+   "prompt_tokens_details": {
+    "cached_tokens": 0,
+    "cache_write_tokens": 0,
+    "audio_tokens": 0,
+    "video_tokens": 0
+   },
+   "citation_tokens": 0,
+   "num_search_queries": 0,
+   "input_tokens": 59,
+   "cost": 0.0008424000000000001,
+   "currency": "USD"
+  },
+  "x_cost": {}
+ },
+ {
+  "model": "z-ai/glm-5.2",
+  "extra": {
+   "reasoning_effort": "none"
+  },
+  "status": 200,
+  "secs": 1.4,
+  "content": "{\"price\": 15.99}",
+  "finish": "stop",
+  "usage": {
+   "prompt_tokens": 43,
+   "completion_tokens": 9,
+   "total_tokens": 52,
+   "reasoning_tokens": 0,
+   "completion_tokens_details": {
+    "reasoning_tokens": 0,
+    "audio_tokens": 0,
+    "accepted_prediction_tokens": 0,
+    "rejected_prediction_tokens": 0
+   },
+   "cache_read_input_tokens": 0,
+   "prompt_tokens_details": {
+    "cached_tokens": 0,
+    "audio_tokens": 0
+   },
+   "citation_tokens": 0,
+   "num_search_queries": 0,
+   "cache_creation_input_tokens": 0,
+   "input_tokens": 43,
+   "cost": 1.2125700000000001e-05,
+   "currency": "USD"
+  },
+  "x_cost": {}
+ }
+]

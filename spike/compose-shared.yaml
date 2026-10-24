@@ -1,0 +1,23 @@
+# Two firms, one shared scratch volume (SHR). No network. Each firm runs as its own uid.
+services:
+  firm_a:
+    image: ubuntu:24.04
+    x-default: true
+    init: true
+    network_mode: none
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    command: ["sh", "-c", "useradd -u 1001 -m -d /home/agent agenta 2>/dev/null; chmod 1777 /srv/scratch; tail -f /dev/null"]
+    volumes: ["scratch:/srv/scratch"]
+  firm_b:
+    image: ubuntu:24.04
+    init: true
+    network_mode: none
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    command: ["sh", "-c", "useradd -u 1002 -m -d /home/agent agentb 2>/dev/null; chmod 1777 /srv/scratch; tail -f /dev/null"]
+    volumes: ["scratch:/srv/scratch"]
+volumes:
+  scratch: {}
