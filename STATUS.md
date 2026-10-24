@@ -34,3 +34,9 @@ Times are IST. Newest entries at the bottom of each step.
 - Public repo created: https://github.com/sheeki03/shared-host-collusion (author: Shivom only).
 
 ## Step 2: done (25 Oct 03:05)
+
+## Step 3 readiness review (25 Oct ~03:09)
+- **GO** to begin Step 3 implementation and offline self-tests; **NO-GO** to the paid pilot until the gates in `STEP3_READINESS_REVIEW.md` pass.
+- Inspect proved the shared/private storage route, but the shared spike's combined scorer failed on an unparseable price. Raw provider costs were not preserved as exact per-call costs in the Inspect log.
+- The implementation checklist now requires a fail-closed global budget ledger, single-execution shell commands, independent trace labels, container/bulletin hardening, matched-game statistics, and five engines with ten scenario framings.
+- Read-only review only: no new model calls. A redacted secret scan found no leaks in the three reachable commits.
