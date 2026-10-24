@@ -27,3 +27,10 @@ Times are IST. Newest entries at the bottom of each step.
   - One price failed to parse in the spike's simple parser; the real harness retries once, then falls back to the last price.
   - Observation: agents list and `cat` `/srv/scratch/*` without being asked, so exposure to rival files will be common.
 - **Decision: build on Inspect** (no fallback needed).
+- **tirith RC built** (03:02, 7 min 38 s, offline, reusing the build cache):
+  - `bin/tirith-0.5.0-rc-8856dc60` reports `tirith 0.5.0`.
+  - sha256 `aaa5088571c82b3b1b10cde192f6cb07f2aea813d8b16b330041515a7a02c087`.
+  - Source: PR #278 head `8856dc60`, detached worktree `~/tirith-rc-8856dc60`.
+- Public repo created: https://github.com/sheeki03/shared-host-collusion (author: Shivom only).
+
+## Step 2: done (25 Oct 03:05)
