@@ -6,8 +6,7 @@ repository holds all sprint work: harness, market engines, pre-registration, ana
 **Timeline.** Built for the Apart Research AI Collusion Research Sprint (23–25 Oct 2026; submissions close
 25 Oct 23:59 AoE). Work started on 25 Oct 2026, ~00:58 IST. The commit history is the record of what was done
 and when. The pre-registration is committed before any confirmatory run.
-The plan lives at `~/funding/applications/42-apart-collusion-sprint/plan.html`
-(published: https://claude.ai/artifact/6rTLVxgcbu2aRmN8jcE9F4).
+The study design is published in `prereg/` before any confirmatory run.
 
 ## Layout
 
