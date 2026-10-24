@@ -30,7 +30,3 @@ The plan lives at `~/funding/applications/42-apart-collusion-sprint/plan.html`
 - **Third-party (credited):** the Fish-style prompt starter by Lucia Sauer / Poseidon Research (MIT), UK AISI Inspect
   (MIT), ControlArena monitor prompt (MIT), MUTE nonce-test design (MIT).
 - **Sprint work (25–26 Oct 2026):** everything else in this folder.
-
-## Secrets
-API keys live outside this folder (`~/.nanogpt-api-key`, `~/.firecrawl-api-key`, owner-only) and are never
-written to logs or committed.
