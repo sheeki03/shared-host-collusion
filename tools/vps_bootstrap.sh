@@ -14,12 +14,16 @@ DIR=$HOME/shared-host-collusion
 
 echo "== packages"
 sudo apt-get update -qq
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io git pipx ca-certificates >/dev/null
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git pipx ca-certificates >/dev/null
+# Never reinstall or restart an existing Docker (the host may run other services on it).
+if ! command -v docker >/dev/null 2>&1; then
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io >/dev/null
+  sudo systemctl enable --now docker
+fi
 if ! docker compose version >/dev/null 2>&1; then
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker-compose-v2 >/dev/null \
     || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker-compose-plugin >/dev/null
 fi
-sudo systemctl enable --now docker
 sudo usermod -aG docker "$USER"
 pipx install uv >/dev/null 2>&1 || true
 export PATH=$HOME/.local/bin:$PATH
@@ -39,5 +43,6 @@ nproc; free -g | head -2; df -h "$HOME" | tail -1
 sg docker -c "docker info --format 'docker {{.ServerVersion}} cpus {{.NCPU}} mem {{.MemTotal}}'"
 
 echo "== mock gate (no paid calls)"
-sg docker -c ".venv/bin/python tools/bench_offline.py run-mock --confirm-docker --games 6 --rounds 4 --concurrency 6"
+GATE=${GATE_GAMES:-6}
+sg docker -c ".venv/bin/python tools/bench_offline.py run-mock --confirm-docker --games $GATE --rounds 4 --concurrency $GATE"
 echo "BOOTSTRAP OK $(hostname) $(git rev-parse --short HEAD)"
