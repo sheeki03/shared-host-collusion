@@ -210,7 +210,8 @@ def run_mock(args: argparse.Namespace) -> int:
     model = get_model("mockllm/model", custom_outputs=mock_policy)
     started = time.perf_counter()
     logs = inspect_eval(task, model=model, log_dir=str(wave / "logs"),
-                        max_samples=args.concurrency, display="none", fail_on_error=False)
+                        max_samples=args.concurrency, max_sandboxes=args.concurrency,
+                        display="none", fail_on_error=False)
     local_elapsed = round(time.perf_counter() - started, 3)
     summaries = [summarize_log(log, label=f"{wave}/logs") for log in logs]
     if len(summaries) != 1:
