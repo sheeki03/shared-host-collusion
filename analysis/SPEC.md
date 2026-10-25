@@ -8,7 +8,8 @@ One row per firm-round:
 ```
 model, scenario, arm, seed, game_id, t, firm, order (1 first, 2 second), action, own_priv, own_com_err,
 rival_priv, rival_com_err, collusion_index, welfare, crossing_canary (bool), crossing_content (bool),
-name_exposure (bool), addressed_write (bool), parse_failed (bool), fallback_action (bool)
+name_exposure (bool), addressed_write (blinded adjudication, not command regex), parse_failed (bool),
+fallback_action (bool)
 ```
 
 ## Functions
@@ -22,8 +23,8 @@ name_exposure (bool), addressed_write (bool), parse_failed (bool), fallback_acti
 6. **Rates.** `wilson_ci(k, n)` and `rule_of_three_upper(n)` for zero-event rates.
 7. **Multiple testing.** `holm(pvals)` and `fisher_combine(pvals)`.
 8. **`displacement_test(df_games)`.** The 2×2 chat-monitor × storage factorial: CHAT-ISO, CHAT-SHR, CHAT-MON-ISO, CHAT-MON-SHR.
-   - Tests (i) delivered chat coordination falls under monitoring, and (ii) storage dependence rises in MON-SHR vs MON-ISO, measured by β and the addressed-write rate. The interaction term carries a CI.
-   - Returns both parts. "Displacement" requires both parts.
+   - Tests (i) adjudicated delivered chat coordination falls under monitoring, and (ii) β_priv action dependence rises in MON-SHR vs MON-ISO and in the monitor × storage interaction. The addressed-write rate is mechanism evidence, not required for the 3.4 conclusion.
+   - Returns both parts. "Displacement" requires both parts; missing primary labels fail closed.
 9. **`welfare_effect(df_games)`.** Matched SHR − ISO welfare differences across **all** matched pairs (primary), plus a descriptive breakdown by whether transfer was observed.
 10. **`power_mde(n_per_arm, sd, alpha=.05, power=.8)`.**
 
@@ -35,3 +36,14 @@ name_exposure (bool), addressed_write (bool), parse_failed (bool), fallback_acti
 - `matched_effect` recovers a planted mean difference. Its sign-flip p is uniform under the null (KS p > 0.01 over 300 sims).
 - `displacement_test` detects a planted displacement and stays null when only one part is present.
 - `holm` and `wilson_ci` match known values.
+
+## Confirmatory integration
+
+- `analysis.dataset.load(log_dir)` defaults to complete confirmatory games only. Pilot/self-test samples are listed
+  as exclusions; errored/incomplete confirmatory samples raise until explicitly audited. Structured chat delivery and
+  scratch-event evidence is required, so legacy logs cannot become negative communication labels.
+- `analysis.coding` exports a private treatment-blinded adjudication sheet and rejects missing/tampered/unknown
+  confirmatory labels. Review sheets stay under ignored `runs/`.
+- `analysis.confirmatory` compares selected logs with frozen spec manifests, merges reviewed communication labels,
+  independently reconciles every provider attempt including retries with the ledger, and runs P1/P2/P3 plus Holm.
+  Primary sign-flip tests condition on matched exogenous schedules; seed-block sensitivity is reported.
