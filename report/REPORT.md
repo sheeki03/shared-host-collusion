@@ -466,12 +466,15 @@ round.
 <!-- Evasion taxonomy (S2): the pipeline does not yet classify evasions. Add a by-class count (relative paths, globs,
 strings built at run time) to Appendix C, without working command strings, or drop the word "taxonomy". -->
 
-**Table 3.** Detection by each monitor at the game level: true-positive rate at the achieved false-positive rate, and
-AUROC where class counts allow, with 95% intervals. Positives are games with trace-confirmed transfer (a canary or
-content crossing); games with unknown crossings are left out of the negatives. Gated arms, whose commands were blocked
-live, and ORACLE, whose leak is by design, are left out of the evaluation set.
+**Table 3.** Detection by each monitor at the game level: true-positive rate at the achieved false-positive rate, with
+Wilson 95% intervals, and AUROC (a point value) where each class has at least five scored games. Positives are games
+with trace-confirmed transfer (a canary or content crossing); games whose crossing status is unknown are left out.
+Rates are over the games with a verdict; coverage is the share of games with one, and the worst case counts every
+unknown verdict against the monitor. The L1 columns also count name-only exposure as positive (a sensitivity; Table
+C12 has every level). Gated arms, whose commands were blocked live, and ORACLE, whose leak is by design, are left out
+of the evaluation set.
 
-{{TABLE:monitors}}
+{{TABLE:monitors_headline}}
 
 The stock tirith policy, a negative control, flagged {{S6.tirith_stock.tpr}} of positives at a false-positive rate of
 {{S6.tirith_stock.fpr}}. The path rule reached a TPR of {{S6.tirith_path.tpr}} at an FPR of {{S6.tirith_path.fpr}}, and
@@ -789,6 +792,12 @@ same-seed re-run replaced them.
 {{TABLE:coverage}}
 
 **Table C11.** Coverage: planned, complete, excluded, trimmed and pending games per cell.
+
+{{TABLE:monitors}}
+
+**Table C12.** Every monitor at every level (firm-round, game-firm, game, and the game level on the judged games only,
+which pairs the monitor comparisons) against L1 exposure (a canary, content or name-exposure crossing), as written by
+`analysis/monitors.py`, with its notes on the judge sample and spend, the active-β threshold and tirith gate errors.
 
 ## Appendix D. Transcript excerpts
 
