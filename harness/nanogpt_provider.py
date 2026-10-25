@@ -24,6 +24,10 @@ Each HTTP attempt
     At most 2 retries (on 429, 5xx and transport errors), each with a new reservation. No retry on other 4xx.
     Attempts that never connected (released, free) have their own budget of MAX_UNSENT_RETRIES with growing waits, so
     a short network drop does not kill a game (added 26 Oct after drops on the instabox hosts; deviation D13).
+    nanoGPT's own refusals before any model generates (a 429/503 whose body carries a code in REFUSED_CODES: account
+    concurrency or billing admission, or every upstream route of the model unavailable) are still settled at est_max
+    and flagged, but count against their own budget of MAX_REFUSED_RETRIES with growing waits up to REFUSED_WAIT_CAP
+    seconds, so a provider-side outage of a few minutes does not kill a game (added 26 Oct; deviation D25).
     Inspect's own retry is switched off (should_retry -> False), so these are the only retries. Inspect still retries
     AttemptTimeoutError by itself, so GenerateConfig.attempt_timeout is refused; use the model arg request_timeout_s.
 
@@ -93,6 +97,9 @@ PREAMBLE_TOKENS = 2048
 REASONING_ALLOWANCE = 8192
 MAX_RETRIES = 2
 MAX_UNSENT_RETRIES = 8   # never-connected attempts (released, free): rides out a network drop of ~3 min at backoff 2 s
+MAX_REFUSED_RETRIES = 16  # refusals before generation (REFUSED_CODES): about 13 min of waits at backoff 2 s
+REFUSED_WAIT_CAP = 60.0
+REFUSED_CODES = frozenset({"all_fallbacks_failed", "async_billing_reservation_failed", "too_many_concurrent_requests"})
 DEFAULT_MAX_TOKENS = 4096        # sent when the config sets none, so the reservation always bounds the output
 DEFAULT_READ_TIMEOUT = 300.0     # seconds per attempt (model arg request_timeout_s)
 CONNECT_TIMEOUT = 15.0
@@ -288,6 +295,15 @@ def _active_sample_id() -> str | None:
         return None
 
 
+def _refused_before_generation(status: int, payload: Any) -> bool:
+    """A nanoGPT 429/503 whose body names a refusal that happens before any model generates (REFUSED_CODES)."""
+    if status not in (429, 503) or not isinstance(payload, dict):
+        return False
+    err = payload.get("error")
+    codes = {payload.get("code"), err.get("code") if isinstance(err, dict) else None}
+    return bool(codes & REFUSED_CODES)
+
+
 def _retry_after(resp: httpx.Response | None) -> float | None:
     if resp is None:
         return None
@@ -403,11 +419,15 @@ class NanoGPTAPI(ModelAPI):
         last_resp: httpx.Response | None = None
         billed = 0          # attempts that may have reached the provider (each may be charged; at most retries + 1)
         unsent = 0          # attempts that never connected (released at zero cost; their own, larger budget)
-        prev_unsent = False
+        refused = 0         # nanoGPT refusals before generation (settled at est_max; their own budget, D25)
+        prev_unsent = prev_refused = False
         while billed <= self._retries:
-            if billed or unsent:
+            if billed or unsent or refused:
                 if prev_unsent:  # a network drop: wait it out (free), 2.5*b, 5*b, 10*b ... capped at 30*b
                     await anyio.sleep(min(30.0, 2.5 * 2 ** (unsent - 1)) * self._backoff)
+                elif prev_refused:  # a provider-side refusal: 2.5*b, 5*b, ... capped at REFUSED_WAIT_CAP s
+                    delay = _retry_after(last_resp) or 0.0
+                    await anyio.sleep(max(delay, min(REFUSED_WAIT_CAP, 2.5 * 2 ** (refused - 1) * self._backoff)))
                 else:
                     delay = _retry_after(last_resp)
                     await anyio.sleep(self._backoff * 3 ** (billed - 1) if delay is None else delay)
@@ -422,7 +442,7 @@ class NanoGPTAPI(ModelAPI):
                                  "status": None, "error": type(ex).__name__})
                 last_error, last_resp = ex, None
                 unsent += 1
-                prev_unsent = True
+                prev_unsent, prev_refused = True, False
                 if unsent > MAX_UNSENT_RETRIES:
                     break
                 continue
@@ -432,7 +452,7 @@ class NanoGPTAPI(ModelAPI):
                                  "status": None, "error": type(ex).__name__})
                 last_error, last_resp = ex, None
                 billed += 1
-                prev_unsent = False
+                prev_unsent = prev_refused = False
                 continue
             except BaseException as ex:  # cancellation or an unexpected error: the request may have been sent
                 await self._settle(token, None, f"aborted:{type(ex).__name__}")
@@ -463,6 +483,13 @@ class NanoGPTAPI(ModelAPI):
                 return output, ModelCall.create(request=body, response=payload, time=elapsed)
             last_error = NanoGPTHTTPError(resp.status_code, resp.text)
             last_payload, last_resp = payload, resp
+            prev_refused = _refused_before_generation(resp.status_code, payload)
+            if prev_refused:
+                billed -= 1  # still settled at est_max above; only the retry budget differs
+                refused += 1
+                if refused > MAX_REFUSED_RETRIES:
+                    break
+                continue
             if not (resp.status_code == 429 or resp.status_code >= 500):
                 break  # no retry on other 4xx, nor on a 200 without a completion (it may have been billed)
 

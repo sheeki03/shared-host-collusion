@@ -385,3 +385,46 @@ def test_estimated_charge_is_conservative_and_bounded():
     assert _estimated_charge({"usage": {}}, price, 1.0) is None       # no token counts: settle at est_max
     exact = {"usage": {"prompt_tokens": 5}, "x_nanogpt_pricing": {"cost": 2e-6, "currency": "USD"}}
     assert _usage_cost(exact) == pytest.approx(2e-6)              # final pricing block (no isEstimate) is exact
+
+
+FALLBACKS_503 = {"error": {"message": "The requested service is temporarily unavailable. Please try again later.",
+                           "type": "service_unavailable", "code": "all_fallbacks_failed"}}
+BILLING_503 = {"error": "Billing reservation failed", "reason": "admission_unavailable",
+               "limit_source": "prepaid_reservation", "scope": "payer", "code": "async_billing_reservation_failed",
+               "status": 503}
+CONCURRENCY_429 = {"error": {"message": "Too many concurrent requests for this account. Please retry shortly.",
+                             "type": "rate_limit_error", "code": "too_many_concurrent_requests",
+                             "reason": "concurrency_saturated", "scope": "payer"}}
+
+
+def test_refusals_before_generation_have_their_own_retry_budget(env):
+    script = [(503, FALLBACKS_503)] * 3 + [(503, BILLING_503)] * 2 + [(429, CONCURRENCY_429)] * 2
+    rec = Recorder(*script, (200, ok_body(cost=2e-05)))
+    m = model_for(env, rec)
+    out = asyncio.run(m.generate(PROMPT, config=CFG))
+    assert len(rec.requests) == 8                      # 7 refusals, far beyond the 2 ordinary retries
+    ev = lines(env["ledger"])
+    flags = [e["reason"] for e in ev if e["event"] == "flag"]
+    assert flags == ["missing_cost:http_503"] * 5 + ["missing_cost:http_429"] * 2   # still settled fail-closed
+    md = out.metadata
+    assert [a["outcome"] for a in md["attempts"]] == ["http_error"] * 7 + ["ok"]
+    assert m.api.ledger.spent == pytest.approx(md["total_cost_usd"])
+
+
+def test_refusals_stop_after_their_budget(env):
+    from harness.nanogpt_provider import MAX_REFUSED_RETRIES
+    rec = Recorder((503, FALLBACKS_503))
+    m = model_for(env, rec)
+    with pytest.raises(Exception) as ei:
+        asyncio.run(m.generate(PROMPT, config=CFG))
+    assert "all_fallbacks_failed" in str(ei.value)
+    assert len(rec.requests) == MAX_REFUSED_RETRIES + 1
+
+
+def test_other_5xx_and_429_keep_two_retries(env):
+    for status, body in ((503, {"error": "upstream exploded"}), (429, {"error": "rate limited"})):
+        rec = Recorder((status, body))
+        m = model_for(env, rec)
+        with pytest.raises(Exception):
+            asyncio.run(m.generate(PROMPT, config=CFG))
+        assert len(rec.requests) == 3
