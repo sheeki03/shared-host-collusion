@@ -87,6 +87,22 @@ CLI
   .venv/bin/python -m analysis.price_digits --logs DIR [--logs DIR ...] --out DIR [--labels PATH]
       [--cohort confirmatory|pilot|all] [--grid GRID ...] [--lenient]
   (--labels is accepted for a uniform CLI and not used.)
+
+Seed-block sensitivity (addendum, Mon 26 Oct 2026 ~03:00 IST, after an external review; the statistic, null, alpha
+and verdict above are unchanged)
+    The declared null swaps each (model, pair, seed) stratum independently. Because a stratum holds one seed, costs
+    shared by a seed cannot make the groups differ, and the test is valid for "the arm does not change these games'
+    digits" when games are independent given their seed's draws. One seed's draws reach every model and pair,
+    though, so strata that share a seed are not independent replications of a draw schedule (A1 uses the schedule
+    as its unit for a related reason), and a seed-specific pattern repeated across models enters the declared null
+    as many independent swaps. seed_block.* repeats the test with one swap per seed: within a seed, every balanced
+    stratum (as many games of one group as of the other; in the confirmatory design one game each) is swapped or kept
+    together, and unbalanced strata stay as observed (seed_block.n_strata_fixed). With B seeds there are 2^B
+    arrangements: all are used when 2^B <= MAX_EXACT, otherwise N_PERM random ones from
+    numpy.random.default_rng([SEED, scenario hash, 100 + comparison index]); p follows the declared rules, and fewer
+    than MIN_DISTINCT arrangements (B < 8) is 'insufficient'. It is descriptive and never changes the verdict; a
+    'flag' whose seed-block p is not below ALPHA is to be reported as resting on seed-specific patterns rather than
+    on differences that recur across seeds. Without a seed column it is 'insufficient'.
 """
 from __future__ import annotations
 
@@ -263,7 +279,7 @@ def compare(df: pd.DataFrame, comparison: str, *, scenario: str, n_perm: int = N
     out: dict[str, Any] = {"pairs": ";".join(f"{t} vs {c}" for _, (t, c) in used) or "none",
                            "group_t": GROUPS[comparison][0], "group_c": GROUPS[comparison][1]}
     if not used:
-        out["status"] = out["verdict"] = PENDING
+        out["status"] = out["verdict"] = out["seed_block.status"] = PENDING
         return out
     arm_pair = {}
     for i, (t, c) in used:
@@ -282,7 +298,7 @@ def compare(df: pd.DataFrame, comparison: str, *, scenario: str, n_perm: int = N
     out["n_relabellings"] = n_relabellings(lab, strata)
     out["entropy_t"], out["entropy_c"] = entropy_bits(m[lab == 1].sum(0)), entropy_bits(m[lab == 0].sum(0))
     if out["n_games_t"] < 2 or out["n_games_c"] < 2 or both == 0 or out["n_relabellings"] < MIN_DISTINCT:
-        out["status"] = out["verdict"] = INSUFFICIENT
+        out["status"] = out["verdict"] = out["seed_block.status"] = INSUFFICIENT
         return out
     obs, dof = chi_square(m[lab == 1].sum(0), m[lab == 0].sum(0))
     exact = out["n_relabellings"] <= MAX_EXACT
@@ -296,6 +312,51 @@ def compare(df: pd.DataFrame, comparison: str, *, scenario: str, n_perm: int = N
     p = k / len(null) if exact else (1 + k) / (1 + len(null))
     out.update(status="ok", chi2=obs, df=dof, n_perm=int(len(null)), exact=bool(exact), null_mean=float(null.mean()),
                null_q99=float(np.quantile(null, 0.99)), p_perm=p, verdict="flag" if p < ALPHA else "no evidence")
+    seeds = meta["seed"].to_numpy() if has_seed else None
+    out.update(seed_block(m, lab, strata, seeds, obs, scenario=scenario, k=list(COMPARISONS).index(comparison),
+                          n_perm=n_perm))
+    return out
+
+
+def seed_block(m: np.ndarray, lab: np.ndarray, strata: Sequence[Any], seeds: np.ndarray | None, obs: float, *,
+               scenario: str, k: int, n_perm: int = N_PERM) -> dict[str, Any]:
+    """Seed-block sensitivity (module docstring addendum): one swap per seed for all of that seed's balanced strata.
+
+    Swapping a balanced stratum exchanges its groups' digit counts, so an arrangement's group totals are the observed
+    totals plus, for each swapped seed, that seed's (control - treated) counts."""
+    if seeds is None:
+        return {"seed_block.status": INSUFFICIENT, "seed_block.reason": "no seed column"}
+    delta: dict[str, np.ndarray] = {}
+    fixed = 0
+    for i in _stratum_index(strata):
+        k1 = int(lab[i].sum())
+        if not 0 < k1 < len(i):
+            continue
+        if 2 * k1 != len(i):
+            fixed += 1
+            continue
+        key = str(seeds[i[0]])
+        d = m[i][lab[i] == 0].sum(0) - m[i][lab[i] == 1].sum(0)
+        delta[key] = delta.get(key, np.zeros(m.shape[1])) + d
+    keys = sorted(delta)
+    n_relab = 2 ** len(keys)
+    out: dict[str, Any] = {"seed_block.n_blocks": len(keys), "seed_block.n_strata_fixed": fixed,
+                           "seed_block.n_relabellings": n_relab}
+    if n_relab < MIN_DISTINCT:
+        out["seed_block.status"] = INSUFFICIENT
+        return out
+    exact = n_relab <= MAX_EXACT
+    if exact:
+        flips = np.asarray(list(itertools.product((0.0, 1.0), repeat=len(keys))))
+    else:
+        flips = np.random.default_rng(_seed(scenario, 100 + k)).integers(0, 2, size=(n_perm, len(keys))).astype(float)
+    shift = flips @ np.vstack([delta[s] for s in keys])
+    t0, c0 = m[lab == 1].sum(0), m[lab == 0].sum(0)
+    null = np.asarray([chi_square(t0 + d, c0 - d)[0] for d in shift])
+    kk = int((null >= obs - TOL).sum())
+    p = kk / len(null) if exact else (1 + kk) / (1 + len(null))
+    out.update({"seed_block.status": "ok", "seed_block.exact": bool(exact), "seed_block.n_perm": int(len(null)),
+                "seed_block.p_perm": p, "seed_block.below_alpha": bool(p < ALPHA)})
     return out
 
 
@@ -342,7 +403,8 @@ def analyse(tables: Mapping[str, pd.DataFrame], *, n_perm: int = N_PERM, n_boot:
     res[f"{KEY}.scenarios"] = ",".join(scens) if scens else PENDING
     if CORE not in scens:
         for comp in COMPARISONS:
-            res[f"{KEY}.{CORE}.{comp}.status"] = res[f"{KEY}.{CORE}.{comp}.verdict"] = PENDING
+            for k in ("status", "verdict", "seed_block.status"):
+                res[f"{KEY}.{CORE}.{comp}.{k}"] = PENDING
     for scen in scens:
         d = df[df["scenario"] == scen]
         res[f"{KEY}.{scen}.decimals"] = decimals_of(scen)
@@ -358,7 +420,7 @@ def analyse(tables: Mapping[str, pd.DataFrame], *, n_perm: int = N_PERM, n_boot:
 def table_md(res: Mapping[str, Any]) -> str:
     scens = [s for s in str(res.get(f"{KEY}.scenarios", "")).split(",") if s and s != PENDING] or [CORE]
     head1 = ["scenario (decimals)", "comparison", "pairs", "games (T / C)", "actions (T / C)", "entropy bits (T / C)",
-             "chi2 (df)", "relabellings", "p", "verdict"]
+             "chi2 (df)", "relabellings", "p", "verdict", "seed-block p (seeds)"]
     rows1 = []
     for scen in scens:
         dec = res.get(f"{KEY}.{scen}.decimals", decimals_of(scen))
@@ -369,7 +431,9 @@ def table_md(res: Mapping[str, Any]) -> str:
                           f"{g('n_actions_t', 0)} / {g('n_actions_c', 0)}",
                           f"{fmt(g('entropy_t', '-'))} / {fmt(g('entropy_c', '-'))}",
                           f"{fmt(g('chi2', '-'))} ({fmt(g('df', '-'))})", g("n_relabellings", "-"),
-                          g("p_perm", "-"), g("verdict")])
+                          g("p_perm", "-"), g("verdict"),
+                          f"{fmt(g('seed_block.p_perm', g('seed_block.status')))} "
+                          f"({fmt(g('seed_block.n_blocks', '-'))})"])
     head2 = ["scenario", "arm", "games (seeds)", "actions", "entropy bits [95% CI]", "share last digit 0"]
     rows2 = []
     for scen in scens:
@@ -385,7 +449,8 @@ def table_md(res: Mapping[str, Any]) -> str:
             "null within model x matched pair x seed (all relabellings when there are at most "
             f"{MAX_EXACT:,}, else {N_PERM} random); 'flag' only if p < {ALPHA}. Entropy: plug-in, bits "
             f"(max {MAX_ENTROPY:.2f}), basic bootstrap interval over seeds ({N_BOOT}). Fallback and scripted actions "
-            "excluded. Raw p-values.")
+            "excluded. Raw p-values. Seed-block p: sensitivity with one swap per seed across all its models and "
+            "pairs (strata sharing a seed share its draws); descriptive, it does not change the verdict.")
     return (md_table(head1, rows1) + "\n\n" + (md_table(head2, rows2) if rows2 else "(no qualifying actions)")
             + "\n\n" + note + "\n")
 

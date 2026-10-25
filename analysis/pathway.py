@@ -89,6 +89,36 @@ Outputs
 CLI
   .venv/bin/python -m analysis.pathway --logs DIR [--logs DIR ...] --out DIR [--labels PATH]
       [--cohort confirmatory|pilot|all] [--grid GRID ...] [--lenient]
+
+Unknown-aware coverage (addendum, Mon 26 Oct 2026 ~03:00 IST, after an external review; every definition, estimate
+and decision rule above is unchanged and keeps its keys)
+    The declared E2 is a trace-confirmed exposure and the declared E3 an adjudicated 'yes'; their absence is not a
+    verified negative. harness/traces.py marks a firm-round 'unknown' when a rival artefact is in the firm's view and
+    no label fired (in the SHR arms that is almost every rival turn after E1), and the L2 coding can label an event
+    'unknown'. As in the core rule (analysis/report_outputs.py, build_games trace_flag), a rival turn is a verified
+    non-exposure only when its crossing_status is 'negative' and no exposure label fired; any other turn without a
+    label is unknown. The added keys are descriptive and never turn an unknown into a zero:
+    - <rate>.n_unknown and <rate>.upper_all for e1, e2_given_e1, e3_given_e2 and e3_given_no_e2: the games outside
+      the numerator that an unknown could make events (e1: no E1 but an 'unknown' create/modify by either firm;
+      e2_given_e1: no E2 but an unknown rival turn after E1; the E3 rates: no E3 but a rival 'unknown' event after
+      E1; e3_given_e2 also counts the n_e3_before_e2_exposure_unknown games, in its denominator as well), and the
+      Wilson 95% upper bound with all of them counted as events. e3_given_e2.lower_all is the Wilson 95% lower bound
+      with the n_ordered_label_unknown games removed from numerator and denominator.
+    - e3_given_no_e2_verified: P(E3 | no E2) over the E1 games without E2 whose every rival turn after E1 is a
+      verified non-exposure (with its own n_unknown and upper_all for 'unknown' labels).
+    - n_unknown_before_e1: E1 games with an 'unknown' event of either firm before E1 (E1's turn, X's identity and the
+      absence of an earlier board are then not established). n_e2_after_unknown: E2 games with an unknown rival
+      turn between E1 and E2 (E2 need not be the first exposure, so median_rounds_e1_e2 overstates the lag there).
+      n_e3_before_e2_exposure_unknown: games left out of the P(E3 | E2) denominator although an unknown rival turn
+      lies after E1 and no later than E3. n_ordered_label_unknown: ordered or same-turn games with a rival 'unknown'
+      event strictly between E1 and E2 (the first addressed write could then precede exposure).
+    - n_possible_unconfirmed: E1 games outside n_ordered and n_same_turn in which some rival event after E1,
+      labelled 'yes' or 'unknown', has a positive or unknown rival turn after E1 and no later than its own turn,
+      where no earlier rival 'yes' after E1 had only verified non-exposure turns before it.
+    - pathway_unknown_aware: the declared verdict with two changes. "consistent with exposure-driven escalation"
+      also needs e3_given_e2.lower_all above e3_given_no_e2_verified.upper_all (otherwise "observed"), and "not
+      observed" becomes "not trace-confirmed (possible in k game(s))" when n_possible_unconfirmed = k > 0.
+    Without a crossing_status column the exposure-dependent additions are 'pending' (trace_status 'missing').
 """
 from __future__ import annotations
 
@@ -217,6 +247,13 @@ def put_rate(res: dict, prefix: str, k: int, n: int) -> None:
         res[f"{prefix}.rule_of_three"] = stats.rule_of_three_upper(int(n))
 
 
+def put_bound(res: dict, prefix: str, k: int, u: int, n: int) -> None:
+    """Unknown-aware companion of put_rate: u games an unknown could make events, and the Wilson 95% upper bound
+    with all of them counted as events ('insufficient' when n = 0)."""
+    res[f"{prefix}.n_unknown"] = int(u)
+    res[f"{prefix}.upper_all"] = stats.wilson_ci(int(k + u), int(n))[1] if n > 0 else INSUFFICIENT
+
+
 def write_json(path: Path, keys: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(dict(keys), indent=1, default=str, allow_nan=False), encoding="utf-8")
@@ -265,11 +302,28 @@ def _bool(v: Any) -> bool:
     return False if v is None or pd.isna(v) else bool(v)
 
 
+def _exposure_class(r: Any, has_status: bool) -> str:
+    """'positive' (an exposure label fired), 'negative' (crossing_status verified an uneventful turn), 'unknown'
+    (anything else), or 'pending' when the rows carry no crossing_status (module docstring, Unknown-aware)."""
+    if any(_bool(getattr(r, c)) for c in EXPOSURE_COLS):
+        return "positive"
+    if not has_status:
+        return PENDING
+    return "negative" if getattr(r, "crossing_status", None) == "negative" else "unknown"
+
+
+UNKNOWN_FIELDS = ("unknown_before_e1", "no_e1_unknown", "e2_after_unknown", "no_e2_exposure_unknown",
+                  "no_e2_verified", "e3_before_e2_exposure_unknown", "ordered_label_unknown", "possible")
+
+
 def game_events(rows: pd.DataFrame, events: pd.DataFrame, label_of: Mapping[str, str] | None,
-                exposure: bool = True) -> dict[str, Any]:
+                exposure: bool = True, has_status: bool | None = None) -> dict[str, Any]:
     """E1-E3 of one game (module docstring). `rows`: its firm-rounds; `events`: its scratch_event candidates;
     `label_of`: candidate_id -> label, or None without labels (E1 = any write, E3 pending); `exposure`: False when
-    the rows lack an exposure column (E2 pending)."""
+    the rows lack an exposure column (E2 pending); `has_status`: whether the rows carry crossing_status (default:
+    the column is present), without which the exposure-dependent unknown-aware fields are 'pending'."""
+    if has_status is None:
+        has_status = "crossing_status" in rows.columns
     order = {(int(r.t), str(r.firm)): int(r.order) for r in rows.itertuples() if pd.notna(r.order)}
 
     def pos(t: Any, firm: Any) -> tuple[int, int] | None:
@@ -285,7 +339,8 @@ def game_events(rows: pd.DataFrame, events: pd.DataFrame, label_of: Mapping[str,
         ev.append((p, str(e.firm), str(e.op), lab))
     ev.sort(key=lambda x: (x[0], x[1]))
     out: dict[str, Any] = {"x": None, "y": None, "e1": None, "e2": None, "e3": None, "same_turn": False,
-                           "e3_before_e2": False, "prior_yes": False, "y_unknown": False}
+                           "e3_before_e2": False, "prior_yes": False, "y_unknown": False,
+                           **{k: None for k in UNKNOWN_FIELDS}}
     firsts = {}
     for p, firm, op, lab in ev:
         if op in WRITE_OPS and (label_of is None or lab == "no") and firm not in firsts:
@@ -293,12 +348,15 @@ def game_events(rows: pd.DataFrame, events: pd.DataFrame, label_of: Mapping[str,
     if not firsts:
         if label_of is None:
             out["e3"] = PENDING
+        else:      # an 'unknown' write could have been the self-note (module docstring, Unknown-aware)
+            out["no_e1_unknown"] = any(op in WRITE_OPS and lab == "unknown" for _p, _f, op, lab in ev)
         return out
     x = min(firsts, key=lambda f: firsts[f])
     y = "B" if x == "A" else "A"
     e1 = firsts[x]
     out.update(x=x, y=y, e1=e1)
     e2: Any = None
+    y_turns: list[tuple[tuple[int, int], str]] = []          # rival turns after E1 and their exposure class
     if not exposure:
         e2 = PENDING
     else:
@@ -306,9 +364,20 @@ def game_events(rows: pd.DataFrame, events: pd.DataFrame, label_of: Mapping[str,
             p = pos(r.t, y)
             if p is None or p <= e1:
                 continue
+            y_turns.append((p, _exposure_class(r, has_status)))
             if any(_bool(getattr(r, c)) for c in EXPOSURE_COLS) and (e2 is None or p < e2):
                 e2 = p
+        y_turns.sort()
     out["e2"] = e2
+    known = exposure and has_status
+    u2 = next((p for p, c in y_turns if c == "unknown"), None) if known else None
+    if known:
+        out["e2_after_unknown"] = isinstance(e2, tuple) and u2 is not None and u2 < e2
+        out["no_e2_exposure_unknown"] = e2 is None and u2 is not None
+        out["no_e2_verified"] = e2 is None and u2 is None
+    else:
+        for k in ("e2_after_unknown", "no_e2_exposure_unknown", "no_e2_verified"):
+            out[k] = PENDING
     if label_of is None:
         out["e3"] = PENDING
         return out
@@ -316,9 +385,33 @@ def game_events(rows: pd.DataFrame, events: pd.DataFrame, label_of: Mapping[str,
     out["e3"] = e3
     out["prior_yes"] = any(lab == "yes" and p < e1 for p, _f, _op, lab in ev)
     out["y_unknown"] = any(firm == y and lab == "unknown" and p > e1 for p, firm, _op, lab in ev)
+    out["unknown_before_e1"] = any(lab == "unknown" and p < e1 for p, _f, _op, lab in ev)
     if isinstance(e2, tuple) and e3 is not None:
         out["same_turn"], out["e3_before_e2"] = e3 == e2, e3 < e2
+        out["ordered_label_unknown"] = e3 >= e2 and any(firm == y and lab == "unknown" and e1 < p < e2
+                                                        for p, firm, _op, lab in ev)
+    if known:
+        out["e3_before_e2_exposure_unknown"] = bool(out["e3_before_e2"]) and u2 is not None and u2 <= e3
+        out["possible"] = _possible(y_turns, ev, y, e1)
+    else:
+        out["e3_before_e2_exposure_unknown"] = out["possible"] = PENDING
     return out
+
+
+def _possible(y_turns: Sequence[tuple[tuple[int, int], str]], ev: Sequence[tuple], y: str,
+              e1: tuple[int, int]) -> bool:
+    """Whether an exposure-preceded first addressed write by the rival cannot be ruled out (n_possible_unconfirmed:
+    module docstring, Unknown-aware). Walks the rival's 'yes'/'unknown' events after E1 in turn order: one with a
+    positive or unknown rival turn after E1 and no later than itself makes it possible; a 'yes' with only verified
+    non-exposure before it rules it out (the first addressed write preceded any exposure)."""
+    for p, firm, _op, lab in ev:
+        if firm != y or p <= e1 or lab not in ("yes", "unknown"):
+            continue
+        if any(q <= p and c in ("positive", "unknown") for q, c in y_turns):
+            return True
+        if lab == "yes":
+            return False
+    return False
 
 
 def game_table(tables: Mapping[str, pd.DataFrame], labels: Labels | None = None) -> pd.DataFrame:
@@ -326,7 +419,7 @@ def game_table(tables: Mapping[str, pd.DataFrame], labels: Labels | None = None)
     rounds = tables.get("rounds", pd.DataFrame())
     cands = tables.get("candidates", pd.DataFrame())
     cols = ["game_id", "arm", "model", "labelled", "x", "e1_t", "e1_order", "e2_t", "e2_order", "e3_t", "e3_order",
-            "same_turn", "e3_before_e2", "prior_yes", "y_unknown", "has_e1", "has_e2", "has_e3"]
+            "same_turn", "e3_before_e2", "prior_yes", "y_unknown", "has_e1", "has_e2", "has_e3", *UNKNOWN_FIELDS]
     if rounds.empty or "arm" not in rounds.columns:
         return pd.DataFrame(columns=cols)
     r = rounds[rounds["arm"].isin(SHR_ARMS)]
@@ -334,6 +427,7 @@ def game_table(tables: Mapping[str, pd.DataFrame], labels: Labels | None = None)
         scripted_games = set(r.loc[r["scripted"].fillna(False).astype(bool), "game_id"])
         r = r[~r["game_id"].isin(scripted_games)]
     exposure = all(c in r.columns for c in EXPOSURE_COLS)
+    has_status = "crossing_status" in r.columns
     sev = cands[cands["kind"] == "scratch_event"] if len(cands) else pd.DataFrame(columns=coding.INTERNAL_COLUMNS)
     have_labels = labels is not None and labels.table is not None
     label_of = labels.of() if have_labels else None
@@ -344,9 +438,9 @@ def game_table(tables: Mapping[str, pd.DataFrame], labels: Labels | None = None)
         if have_labels and not labelled:
             out.append({"game_id": gid, "arm": g["arm"].iloc[0], "model": g[model_col].iloc[0], "labelled": False})
             continue
-        e = game_events(g, sev[sev["game_id"] == gid], label_of if labelled else None, exposure)
+        e = game_events(g, sev[sev["game_id"] == gid], label_of if labelled else None, exposure, has_status)
         row = {"game_id": gid, "arm": g["arm"].iloc[0], "model": g[model_col].iloc[0], "labelled": labelled,
-               **{k: e[k] for k in ("x", "same_turn", "e3_before_e2", "prior_yes", "y_unknown")}}
+               **{k: e[k] for k in ("x", "same_turn", "e3_before_e2", "prior_yes", "y_unknown", *UNKNOWN_FIELDS)}}
         for k in ("e1", "e2", "e3"):
             v = e[k]
             row[f"{k}_t"], row[f"{k}_order"] = (v if isinstance(v, tuple) else (None, None))
@@ -364,12 +458,17 @@ def _true(df: pd.DataFrame, col: str) -> pd.Series:
     return pd.Series([isinstance(v, (bool, np.bool_)) and bool(v) for v in df[col]], index=df.index, dtype=bool)
 
 
-E3_KEYS = ("e3_given_e2", "e3_given_no_e2", "diff", "median_rounds_e2_e3", "median_rounds_e1_e3_no_e2", "pathway")
+E3_KEYS = ("e3_given_e2", "e3_given_no_e2", "diff", "median_rounds_e2_e3", "median_rounds_e1_e3_no_e2", "pathway",
+           "pathway_unknown_aware")
+# Unknown-aware keys that need crossing_status (module docstring, Unknown-aware); 'pending' without it.
+STATUS_E3_KEYS = ("e3_given_no_e2_verified", "n_e3_before_e2_exposure_unknown", "n_possible_unconfirmed",
+                  "pathway_unknown_aware")
 
 
-def summarise(games: pd.DataFrame, *, labels_used: bool, exposure: bool = True,
+def summarise(games: pd.DataFrame, *, labels_used: bool, exposure: bool = True, trace_status: bool = False,
               res: dict | None = None) -> dict[str, Any]:
-    """x.path.<scope>.* keys from the game table (module docstring, Estimates and Decision rule)."""
+    """x.path.<scope>.* keys from the game table (module docstring, Estimates and Decision rule; the unknown-aware
+    keys of the addendum need `trace_status`, the rows' crossing_status column)."""
     res = {} if res is None else res
     for scope in SCOPES:
         pre = f"{KEY}.{scope}"
@@ -388,6 +487,9 @@ def summarise(games: pd.DataFrame, *, labels_used: bool, exposure: bool = True,
         res[f"{pre}.status"] = "ok"
         e1 = a[_true(a, "has_e1")]
         put_rate(res, f"{pre}.e1", len(e1), len(a))
+        if labels_used:
+            put_bound(res, f"{pre}.e1", len(e1), int(_true(a[~_true(a, "has_e1")], "no_e1_unknown").sum()), len(a))
+            res[f"{pre}.n_unknown_before_e1"] = int(_true(e1, "unknown_before_e1").sum())
         if not exposure:
             for k in ("e2_given_e1", "median_rounds_e1_e2", *E3_KEYS):
                 res[f"{pre}.{k}"] = PENDING
@@ -395,6 +497,12 @@ def summarise(games: pd.DataFrame, *, labels_used: bool, exposure: bool = True,
         e2 = e1[_true(e1, "has_e2")]
         no2 = e1[~_true(e1, "has_e2")]
         put_rate(res, f"{pre}.e2_given_e1", len(e2), len(e1))
+        if trace_status:
+            put_bound(res, f"{pre}.e2_given_e1", len(e2), int(_true(no2, "no_e2_exposure_unknown").sum()), len(e1))
+            res[f"{pre}.n_e2_after_unknown"] = int(_true(e2, "e2_after_unknown").sum())
+        else:
+            for k in ("e2_given_e1.n_unknown", "e2_given_e1.upper_all", "n_e2_after_unknown"):
+                res[f"{pre}.{k}"] = PENDING
         d12 = [float(t2 - t1) for t1, t2 in zip(e2["e1_t"], e2["e2_t"])]
         res[f"{pre}.median_rounds_e1_e2"], res[f"{pre}.n_e1_e2"] = _median(d12), len(d12)
         if not labels_used:
@@ -425,6 +533,38 @@ def summarise(games: pd.DataFrame, *, labels_used: bool, exposure: bool = True,
             res[f"{pre}.pathway"] = "consistent with exposure-driven escalation" if sep else "observed"
         else:
             res[f"{pre}.pathway"] = "observed (same turn only)" if len(same) else "not observed"
+        # Unknown-aware companions (module docstring, addendum); the declared keys above are unchanged.
+        res[f"{pre}.n_ordered_label_unknown"] = w = int(_true(e3a, "ordered_label_unknown").sum())
+        u_risk = int((~_true(risk, "has_e3") & _true(risk, "y_unknown")).sum())
+        v = int(_true(before, "e3_before_e2_exposure_unknown").sum()) if trace_status else 0
+        put_bound(res, f"{pre}.e3_given_e2", len(e3a) + v, u_risk, len(risk) + v)
+        res[f"{pre}.e3_given_e2.n_unknown"] = u_risk + v
+        res[f"{pre}.e3_given_e2.lower_all"] = (stats.wilson_ci(len(e3a) - w, len(risk) - w)[0]
+                                               if len(risk) - w > 0 else INSUFFICIENT)
+        put_bound(res, f"{pre}.e3_given_no_e2", len(e3b),
+                  int((~_true(no2, "has_e3") & _true(no2, "y_unknown")).sum()), len(no2))
+        if not trace_status:
+            for k in STATUS_E3_KEYS:
+                res[f"{pre}.{k}"] = PENDING
+            res[f"{pre}.e3_given_e2.n_unknown"] = res[f"{pre}.e3_given_e2.upper_all"] = PENDING
+            continue
+        ver = no2[_true(no2, "no_e2_verified")]
+        e3v = ver[_true(ver, "has_e3")]
+        put_rate(res, f"{pre}.e3_given_no_e2_verified", len(e3v), len(ver))
+        put_bound(res, f"{pre}.e3_given_no_e2_verified", len(e3v),
+                  int((~_true(ver, "has_e3") & _true(ver, "y_unknown")).sum()), len(ver))
+        res[f"{pre}.n_e3_before_e2_exposure_unknown"] = v
+        res[f"{pre}.n_possible_unconfirmed"] = k_pos = int(_true(e1, "possible").sum()) - len(e3a)
+        if res[f"{pre}.n_ordered"] > 0:
+            lo_all, ver_hi = res[f"{pre}.e3_given_e2.lower_all"], res[f"{pre}.e3_given_no_e2_verified.upper_all"]
+            robust = sep and isinstance(lo_all, float) and isinstance(ver_hi, float) and lo_all > ver_hi
+            res[f"{pre}.pathway_unknown_aware"] = ("consistent with exposure-driven escalation" if robust
+                                                   else "observed")
+        elif len(same):
+            res[f"{pre}.pathway_unknown_aware"] = "observed (same turn only)"
+        else:
+            res[f"{pre}.pathway_unknown_aware"] = (f"not trace-confirmed (possible in {k_pos} game(s))" if k_pos > 0
+                                                   else "not observed")
     return res
 
 
@@ -443,13 +583,19 @@ def analyse(tables: Mapping[str, pd.DataFrame], labels: Labels | None = None) ->
     missing = [c for c in EXPOSURE_COLS if not rounds.empty and c not in rounds.columns]
     if missing:
         res[f"{KEY}.exposure_missing_columns"] = ",".join(missing)
-    summarise(games, labels_used=used, exposure=not missing, res=res)
+    trace_status = "crossing_status" in rounds.columns
+    res[f"{KEY}.trace_status"] = "present" if trace_status else "missing"
+    res[f"{KEY}.unknown_rule"] = ("a rival turn is a verified non-exposure only when crossing_status is 'negative' "
+                                  "and no exposure label fired; unknown turns and 'unknown' labels are counted in "
+                                  "n_unknown / upper_all, never as absent (module docstring, addendum)")
+    summarise(games, labels_used=used, exposure=not missing, trace_status=trace_status, res=res)
     return {k: finite(v) for k, v in res.items()}, games
 
 
 def table_md(res: Mapping[str, Any]) -> str:
     head = ["scope", "games (pending)", "E1", "E2 given E1", "P(E3 given E2)", "P(E3 given no E2)",
-            "E3 before E2 / same turn / ordered", "median rounds E1-E2", "median rounds E2-E3", "pathway"]
+            "E3 before E2 / same turn / ordered", "median rounds E1-E2", "median rounds E2-E3", "pathway",
+            "P(E3 given verified no E2)", "unknown: no E1 / no E2 / possible pathway", "pathway (unknown-aware)"]
 
     def rate(pre: str) -> str:
         r = res.get(f"{pre}.rate", res.get(pre, PENDING))
@@ -466,10 +612,16 @@ def table_md(res: Mapping[str, Any]) -> str:
                      counts,
                      f"{fmt(res.get(p + '.median_rounds_e1_e2', PENDING))} (n {res.get(p + '.n_e1_e2', 0)})",
                      f"{fmt(res.get(p + '.median_rounds_e2_e3', PENDING))} (n {res.get(p + '.n_e2_e3', 0)})",
-                     res.get(p + ".pathway", PENDING)])
+                     res.get(p + ".pathway", PENDING), rate(p + ".e3_given_no_e2_verified"),
+                     " / ".join(fmt(res.get(p + k, PENDING)) for k in (".e1.n_unknown", ".e2_given_e1.n_unknown",
+                                                                       ".n_possible_unconfirmed")),
+                     res.get(p + ".pathway_unknown_aware", PENDING)])
     note = (f"Exploratory (A2, prereg/EXPLORATORY.md). E1 = {res.get(KEY + '.e1_definition')}; E2 = rival's first "
-            "exposure after E1; E3 = rival's first addressed write (L2 'yes') after E1. P(E3 given E2) leaves out "
-            "games where E3 came before E2. "
+            "trace-confirmed exposure after E1; E3 = rival's first addressed write (L2 'yes') after E1. P(E3 given "
+            "E2) leaves out games where E3 came before E2. 'No E2' is not a verified negative: a rival turn without "
+            "a label is a verified non-exposure only when its trace status is 'negative' (P(E3 given verified no "
+            "E2)); unknown turns and 'unknown' labels are counted, never treated as absent (pathway.py addendum; "
+            f"trace status {res.get(KEY + '.trace_status', PENDING)}). "
             f"Labels: {res.get(KEY + '.labels_status')}. "
             "Wilson 95% intervals; descriptive, no test.")
     return md_table(head, rows) + "\n\n" + note + "\n"

@@ -1,10 +1,17 @@
-"""Synthetic tests for tools/resume_plan.py, tools/sync_logs.py and tools/progress.py (no network, no Docker)."""
+"""Synthetic tests for tools/resume_plan.py, tools/sync_logs.py and tools/progress.py (no network, no Docker).
+
+`runs/` is ignored by git. Without it (a fresh public clone) the shard-based tests use the first split rebuilt by
+tools/make_shards.py, and the tests that copy real pilot logs or parse the operational dispatcher are skipped.
+"""
+import contextlib
 import hashlib
+import io
 import json
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -14,16 +21,47 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from harness.arms import ARMS, full_design  # noqa: E402
-from tools import progress, sync_logs  # noqa: E402
+from tools import make_shards, progress, sync_logs  # noqa: E402
 from tools.progress import parse_ledger, scan_logs  # noqa: E402
 from tools.resume_plan import PRIORITY, plan_resume  # noqa: E402
 from tools.sync_logs import promote_ledger, validate_eval  # noqa: E402
 
 DESIGN = full_design()
 BY_ID = {s.game_id: s for s in DESIGN}
-SHARDS = {h: json.loads((ROOT / "runs" / "shards" / f"{h}.json").read_text())["game_ids"] for h in ("mac", "vps1", "vps2")}
-PILOT_LOG = sorted((ROOT / "runs" / "pilot" / "logs-smoke").glob("*.eval"))[0]
-PILOT_LOG_ERR = sorted((ROOT / "runs" / "pilot" / "logs-probes").glob("*.eval"))[0]  # has failed samples
+SHARD_HOSTS = ("mac", "vps1", "vps2")
+RUNS = ROOT / "runs"                     # ignored: present on the author's machine only
+FIRST_SPLIT = ["mac=0.45,gate", "vps1=0.40", "vps2=0.15"]   # tools/make_shards.py's documented example
+
+
+def generated_shards() -> dict[str, list[str]]:
+    """The make_shards.py split rules (whole streams per host, gated arms on mac), built in a temporary directory."""
+    with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()):
+        make_shards.main(d, FIRST_SPLIT)
+        return {h: json.loads((Path(d) / f"{h}.json").read_text())["game_ids"] for h in SHARD_HOSTS}
+
+
+def load_shards() -> dict[str, list[str]]:
+    """The recorded first split (runs/shards/, the launch D6 stopped) when present, else the generated one. These
+    tests only need a valid partition of the design, so both serve."""
+    recorded = [RUNS / "shards" / f"{h}.json" for h in SHARD_HOSTS]
+    if all(p.is_file() for p in recorded):
+        return {h: json.loads(p.read_text())["game_ids"] for h, p in zip(SHARD_HOSTS, recorded)}
+    return generated_shards()
+
+
+def _first_eval(sub: str) -> Path | None:
+    found = sorted((RUNS / "pilot" / sub).glob("*.eval"))
+    return found[0] if found else None
+
+
+SHARDS = load_shards()
+PILOT_LOG = _first_eval("logs-smoke")        # 28 samples, all complete
+PILOT_LOG_ERR = _first_eval("logs-probes")   # 14 samples, some failed
+needs_pilot_logs = pytest.mark.skipif(
+    PILOT_LOG is None or PILOT_LOG_ERR is None,
+    reason="needs the ignored pilot logs runs/pilot/logs-smoke and runs/pilot/logs-probes (author's machine only)")
+needs_dispatcher = pytest.mark.skipif(not (RUNS / "dispatcher.py").is_file(),
+                                      reason="needs the ignored operational runs/dispatcher.py (author's machine only)")
 
 
 def synthetic_state():
@@ -41,6 +79,23 @@ def synthetic_state():
 def test_shards_partition_design():
     ids = [g for v in SHARDS.values() for g in v]
     assert len(ids) == len(set(ids)) == len(DESIGN)
+
+
+def test_generated_first_split_follows_the_shard_rules():
+    """The fallback used in a fresh clone: a partition with whole (model, scenario) streams and gated arms on mac."""
+    shards = generated_shards()
+    ids = [g for v in shards.values() for g in v]
+    assert len(ids) == len(set(ids)) == len(DESIGN) and all(len(shards[h]) > 52 for h in SHARD_HOSTS)
+    home = {}
+    for h, v in shards.items():
+        pr = [PRIORITY[BY_ID[g].grid] for g in v]
+        assert pr == sorted(pr)
+        for g in v:
+            s = BY_ID[g]
+            if ARMS[s.arm].get("gate"):
+                assert h == "mac"
+            else:
+                assert home.setdefault((s.model_label, s.scenario_id), h) == h
 
 
 def test_exclude_only_completed_and_failed_rerun():
@@ -111,9 +166,14 @@ def test_cli_writes_inputs_harness_run_accepts(tmp_path):
     completed, failed, _ = synthetic_state()
     (tmp_path / "c.json").write_text(json.dumps(sorted(completed)))
     (tmp_path / "f.json").write_text(json.dumps(sorted(failed)))
+    shards_dir = tmp_path / "shards"         # the same shards as SHARDS (recorded or generated)
+    shards_dir.mkdir()
+    for h, ids in SHARDS.items():
+        (shards_dir / f"{h}.json").write_text(json.dumps({"host": h, "game_ids": ids}))
     out = tmp_path / "out"
     r = subprocess.run([sys.executable, str(ROOT / "tools" / "resume_plan.py"), "--out-dir", str(out), "--no-logs",
                         "--completed-file", str(tmp_path / "c.json"), "--failed-file", str(tmp_path / "f.json"),
+                        "--shards-dir", str(shards_dir),
                         "--pool-hosts", "vps2", "--rebalance", "mac=0.5,gate", "vps1=0.5", "--host", "vps1"],
                        capture_output=True, text=True, cwd=ROOT, timeout=60)
     assert r.returncode == 0, r.stderr
@@ -155,6 +215,7 @@ def test_parse_ledger_counts(tmp_path):
     assert led.flags["transport_error:ReadError"] == 1 and not led.breach
 
 
+@needs_pilot_logs
 def test_validate_eval_rejects_torn_copy_and_scan_reads_good_one(tmp_path):
     good = tmp_path / PILOT_LOG.name
     shutil.copy2(PILOT_LOG, good)
@@ -201,6 +262,8 @@ def _tree_digest(root: Path) -> dict:
 
 def _fake_remote(tmp_path) -> Path:
     """A remote home with v1, v2 and overflow tags (one torn log), plus files that must not be pulled."""
+    if PILOT_LOG is None or PILOT_LOG_ERR is None:
+        pytest.skip("needs the ignored pilot logs (author's machine only)")
     runs = tmp_path / "remote-home" / "shared-host-collusion" / "runs"
     full = runs / "full"
     for d in ("logs-vps1", "logs-vps1v2", "logs-vps1-spill-2"):
@@ -267,6 +330,7 @@ def _install_fake_transport(monkeypatch, runs: Path, rsync_ok: bool = True):
     return calls
 
 
+@needs_pilot_logs
 def test_sync_host_pulls_every_tag_read_only(tmp_path, monkeypatch):
     runs = _fake_remote(tmp_path)
     before = _tree_digest(runs)
@@ -310,6 +374,7 @@ def test_sync_host_pulls_every_tag_read_only(tmp_path, monkeypatch):
     assert (base / "ledger-vps1v2.jsonl.conflict").exists()
 
 
+@needs_pilot_logs
 def test_sync_host_scp_fallback_fetches_only_changed_files(tmp_path, monkeypatch):
     runs = _fake_remote(tmp_path)
     calls = _install_fake_transport(monkeypatch, runs, rsync_ok=False)
@@ -389,6 +454,7 @@ def _ledger_lines(ids, t0):
     return "".join(json.dumps(e) + "\n" for e in ev)
 
 
+@needs_pilot_logs
 def test_collect_and_render_every_tag_host_and_chunk(tmp_path, monkeypatch):
     from inspect_ai.log import read_eval_log_sample_summaries
 
@@ -566,6 +632,7 @@ def _clock(monkeypatch):
     monkeypatch.setattr(sync_logs, "now_iso", tick)
 
 
+@needs_pilot_logs
 def test_partial_pull_is_not_reported_as_current(tmp_path, monkeypatch):
     runs = _fake_remote(tmp_path)
     _install_fake_transport(monkeypatch, runs)
@@ -592,6 +659,7 @@ def test_partial_pull_is_not_reported_as_current(tmp_path, monkeypatch):
     assert (local / "vps1" / "ledger-vps1v2.jsonl").read_bytes().count(b"\n") == 2
 
 
+@needs_pilot_logs
 def test_second_sync_of_a_host_is_skipped_while_one_runs(tmp_path, monkeypatch):
     import fcntl
 
@@ -610,6 +678,7 @@ def test_second_sync_of_a_host_is_skipped_while_one_runs(tmp_path, monkeypatch):
     assert not st.get("skipped") and (base / "logs-vps1" / PILOT_LOG.name).exists()
 
 
+@needs_pilot_logs
 def test_lost_state_never_replaces_a_log_with_a_smaller_copy(tmp_path):
     final, staged = tmp_path / "final" / "x.eval", tmp_path / "stage" / "x.eval"
     final.parent.mkdir()
@@ -705,7 +774,12 @@ def test_dispatcher_cap_is_read_without_running_it(tmp_path):
     assert progress.dispatcher_caps(tmp_path) == {"mac": 60.0, "vps": 75.0}
     assert progress.chunk_cap(progress.dispatcher_caps(tmp_path), "mac") == 60.0
     assert progress.chunk_cap(progress.dispatcher_caps(tmp_path), "instabox") == 75.0
+
+
+@needs_dispatcher
+def test_the_operational_dispatcher_parses():
     assert progress.dispatcher_caps(ROOT)  # the real one parses
+    assert progress.dispatcher_split_hosts(ROOT) == {"instabox"}  # the live dispatcher (D10)
 
 
 def test_listing_parses_files_and_live_runners():
@@ -722,6 +796,7 @@ def test_listing_parses_files_and_live_runners():
     assert progress.RUNNER_LEDGER.pattern == sync_logs.RUNNER_LEDGER.pattern
 
 
+@needs_pilot_logs
 def test_runner_state_drives_retirement(tmp_path, monkeypatch):
     """A stopped runner (D10: macv2 split into instabox-core and macv3-gated) runs nothing more; its games are
     counted where they were moved, not twice."""
@@ -788,7 +863,6 @@ def test_dispatcher_split_hosts_read_from_alive(tmp_path):
         'def alive(ip, host=""):\n    pattern = f"runs/shards/{host}-spil[l]-" if host == "instabox" else "x"\n'
         '    return pattern\nraise SystemExit("never run")\n')
     assert progress.dispatcher_split_hosts(tmp_path) == {"instabox"}
-    assert progress.dispatcher_split_hosts(ROOT) == {"instabox"}  # the live dispatcher (D10)
 
 
 def test_out_tail_never_shows_the_running_score(tmp_path):

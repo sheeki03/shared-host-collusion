@@ -109,7 +109,14 @@ def test_planted_effects_recovered_confirmatory(synthetic):
     assert r["meta.preliminary"] is False and r["meta.n_complete"] == r["meta.n_games"] == 96
     assert r["meta.ledger_reconciled"] is True and r["L2.status"] == "complete"
     assert r["meta.total_cost_usd"] == pytest.approx(r["meta.cost_kept_games_usd"])
-    assert "analysed complete-game calls only" in r["meta.cost_scope"]
+    assert r["meta.cost_scope"].startswith("Three cost quantities") and all(
+        k in r["meta.cost_scope"] for k in ("meta.total_cost_usd", "meta.ledger_settled_usd",
+                                            "meta.ledger_full_reservation_usd", "meta.account_spend_usd"))
+    # no flags and no unsaved settlements in this ledger: every settlement is a provider charge of a saved call
+    assert r["meta.ledger_full_reservation_n"] == 0 and r["meta.ledger_full_reservation_usd"] == 0
+    assert r["meta.ledger_provider_charged_usd"] == pytest.approx(r["meta.ledger_settled_usd"])
+    assert r["meta.ledger_unmatched_settled_n"] == 0 and r["meta.ledger_flags_admitted_unlisted"] == "none"
+    assert r["meta.account_spend_usd"] == r["meta.account_spend_source"] == "pending"   # an external input
     assert r["meta.n_rounds"] == 96 * ROUNDS and r["meta.hosts"] == "hostA, hostB"
     # P1: permission x storage interaction on adjudicated addressed writes.
     assert r["P1.l2.diff"] == pytest.approx(P1_TRUE, abs=1e-9) and r["P1.l2.ci_lo"] > 0
@@ -441,12 +448,62 @@ def test_s6_tables_copy_the_tool_table_and_render_the_headline(s6_tool, tmp_path
     assert rows.loc["tirith_path", "scored cohort"] == "full eligible evaluation set"
     paired = (tdir / "monitors_paired.md").read_text()
     assert all(m in paired for m in M.MONITORS) and "same selected judge-game set" in paired
+    assert rows.loc["tirith_path", "cohort games"] == 20 and rows.loc["llm_joint", "cohort games"] != "pending"
     # writing into the monitors tool's own output directory never overwrites its table
     before = s6_tool.paths["table"].read_bytes()
     same = ro.Ctx(cfg=ro.Config(log_dirs=[], monitor_results=str(s6_tool.paths["keys"]), preliminary=True,
                                 out=str(s6_tool.out)))
     ro.write_s6_tables(same, ro.s6_monitors(same, _games_df(s6_tool.games)))
     assert s6_tool.paths["table"].read_bytes() == before
+
+
+def test_s6_denominators_and_paired_table_use_the_keys_monitors_writes(s6_tool, tmp_path):
+    """Full-set vs judged-subset denominators are explicit keys (copied from monitor_metrics.csv), and the paired
+    judged-game table reads the game_judged keys monitors.py actually writes (L1 truth, S6.l1.*), never 'pending'."""
+    ctx = _s6_ctx(tmp_path, s6_tool.paths["keys"])              # confirmatory
+    ro.write_s6_tables(ctx, ro.s6_monitors(ctx, _games_df(s6_tool.games)))
+    r = ctx.res
+    met = pd.read_csv(s6_tool.paths["metrics"])
+    for m in M.MONITORS:
+        head = met[(met["monitor"] == m) & (met["level"] == "game") & (met["truth"] == "gt_transfer")].iloc[0]
+        judged = met[(met["monitor"] == m) & (met["level"] == "game_judged") & (met["truth"] == "gt")].iloc[0]
+        assert r[f"S6.denom.{m}.cohort"] == (ro.S6_JUDGE_COHORT if m.startswith("llm_") else ro.S6_FULL_COHORT)
+        assert r[f"S6.denom.{m}.n_games"] == head["n_units"]
+        assert r[f"S6.denom.{m}.n_known"] == r[f"S6.{m}.n_pos"] + r[f"S6.{m}.n_neg"]
+        assert r[f"S6.denom.{m}.n_truth_unknown"] == head["n_gt_unknown"]
+        assert r[f"S6.denom.{m}.n_no_verdict"] == head["n_monitor_unknown"]
+        assert r[f"S6.denom.{m}.judged.n_games"] == judged["n_units"]
+        assert r[f"S6.denom.{m}.judged.n_known"] == (r[f"S6.l1.{m}.game_judged.n_pos"]
+                                                     + r[f"S6.l1.{m}.game_judged.n_neg"])
+        assert r[f"S6.denom.{m}.judged.truth"].startswith("L1 exposure")
+    assert r["S6.denom.tirith_path.n_games"] == r["S6.n_games"] == 20               # full eligible set
+    assert r["S6.denom.llm_joint.n_games"] == r["S6.denom.tirith_path.judged.n_games"] == r["S6.judge.n_games"]
+    paired = ro.s6_paired_table(r).set_index("monitor")
+    assert not (paired == "pending").any().any()
+    for m in M.MONITORS:
+        assert paired.loc[m, "pos"] == r[f"S6.l1.{m}.game_judged.n_pos"]
+        assert paired.loc[m, "judged games"] == r["S6.judge.n_games"]
+    text = (tmp_path / "ro" / "tables" / "monitors_paired.md").read_text()
+    assert not text.startswith("_No data yet._") and "L1 exposure only" in text
+    # a metrics file from another monitors run, or none, leaves the denominators pending (never a guess)
+    other = tmp_path / "other"
+    other.mkdir()
+    for k in ("keys", "scores", "metrics"):
+        (other / s6_tool.paths[k].name).write_bytes(s6_tool.paths[k].read_bytes())
+    bad = met.copy()
+    row = (bad["monitor"] == "tirith_path") & (bad["level"] == "game") & (bad["truth"] == "gt_transfer")
+    bad.loc[row, "n_pos"] += 1
+    bad.to_csv(other / "monitor_metrics.csv", index=False)
+    c2 = _s6_ctx(tmp_path, other / "monitor_results.json", out="ro2")
+    ro.s6_monitors(c2, _games_df(s6_tool.games))
+    assert c2.res["S6.denom.tirith_path.n_games"] == "pending" and c2.res["S6.denom.tirith_stock.n_games"] == 20
+    assert any("does not match" in n for n in c2.notes)
+    (other / "monitor_metrics.csv").unlink()
+    c3 = _s6_ctx(tmp_path, other / "monitor_results.json", out="ro3")
+    ro.s6_monitors(c3, _games_df(s6_tool.games))
+    assert all(c3.res[f"S6.denom.{m}.n_games"] == "pending" for m in M.MONITORS)
+    # a monitor_results.json key in the denominator namespace is never copied over these
+    assert ro._s6_reserved("S6.denom.tirith_path.n_games")
 
 
 def test_s6_absent_or_unreadable_is_pending_never_zero(tmp_path):
@@ -807,6 +864,134 @@ def test_d12_ledger_failures_close_the_run(tmp_path, monkeypatch):
     d.old.write_text("".join(ln for ln in d.old.read_text().splitlines(keepends=True) if "rid-YB" not in ln))
     with pytest.raises(ro.AnalysisError, match="no ledger closure for saved reservation rid-YB"):
         recon()
+
+
+def _replay_setup(tmp_path, monkeypatch):
+    """One success log of the 96 synthetic games, in the ledger format harness/ledger.py writes (reserve with the
+    Inspect sample_id, settle, flag). Game R errored after charged calls (one provider charge, then three HTTP 503
+    attempts settled at the full reservation) and Inspect replayed it (retry_on_error, D13): its saved sample holds the
+    replay's calls only. Game Q's call was rate-limited once (missing_cost:http_429, full reservation) and retried; game
+    U's successful call came back without a cost (missing_cost:http_200, admitted by prefix but named in no deviation).
+    A game in flight when a launch stopped (never complete) and a reservation without a sample were charged too."""
+    samples = _samples()
+    by_id = {s.metadata["game_id"]: s for s in samples}
+    ids = list(by_id)
+    R, Q, U = ids[5], ids[17], ids[29]
+    by_id[R].error_retries = [SimpleNamespace(message="NanoGPTHTTPError('nanoGPT HTTP 503')")]
+
+    def one_call(gid, attempts):
+        res = by_id[gid].metadata["result"]
+        res["calls"] = [dict(res["calls"][0], attempts=attempts, total_cost_usd=sum(a["settled_usd"] for a in attempts),
+                             cost_usd=sum(a["settled_usd"] for a in attempts))]
+    one_call(Q, [dict(reservation_id="rid-Q429", outcome="http_error", settled_usd=0.25, status=429),
+                 dict(reservation_id="rid-Qok", outcome="ok", settled_usd=0.001, status=200)])
+    one_call(U, [dict(reservation_id="rid-U200", outcome="ok", settled_usd=0.3, status=200)])
+    log = SimpleNamespace(status="success", error=None, samples=samples, location="file:///x/logs/replay.eval")
+    monkeypatch.setattr(dataset, "list_eval_logs", lambda _: [SimpleNamespace(name="replay.eval")])
+    monkeypatch.setattr(dataset, "read_eval_log", lambda _: log)
+    monkeypatch.setattr(confirmatory, "PRIVATE_RUNS", tmp_path.resolve())
+    manifest = tmp_path / "specs.json"
+    manifest.write_text(json.dumps([{k: v for k, v in s.metadata.items() if k != "result"} for s in samples]))
+
+    def ev(event, rid, sample=None, **kw):
+        return json.dumps({"event": event, "id": rid, "sample_id": sample, **kw}) + "\n"
+    lines = [ev("init", "L-replay", cap="100")]
+    flags = {"rid-Q429": "missing_cost:http_429", "rid-U200": "missing_cost:http_200"}
+    for s in samples:
+        gid = s.metadata["game_id"]
+        for c in s.metadata["result"]["calls"]:
+            for a in c["attempts"]:
+                rid, amt = a["reservation_id"], a["settled_usd"]
+                lines += [ev("reserve", rid, f"{gid}#1", est_max=max(amt, 0.25)),
+                          ev("settle", rid, f"{gid}#1", actual=amt)]
+                if rid in flags:
+                    lines.append(ev("flag", rid, f"{gid}#1", actual=amt, reason=flags[rid]))
+    unsaved = [("rid-R1a", f"{R}#1", 0.004, None)] + [(f"rid-R1{x}", f"{R}#1", 0.1, "missing_cost:http_503")
+                                                       for x in "bcd"]
+    unsaved += [("rid-X1", "deep:m1:core-pricing:ISO-AWARE:1009#1", 0.002, None), ("rid-N1", None, 0.001, None)]
+    for rid, sample, amt, reason in unsaved:
+        lines += [ev("reserve", rid, sample, est_max=max(amt, 0.1)), ev("settle", rid, sample, actual=amt)]
+        if reason:
+            lines.append(ev("flag", rid, sample, actual=amt, reason=reason))
+    ledger = tmp_path / "ledger-replay.jsonl"
+    ledger.write_text("".join(lines))
+    kept = 0.001 * (len(samples) - 2) + 0.251 + 0.3
+    return SimpleNamespace(log=log, ledger=ledger, manifest=manifest, ids=dict(R=R, Q=Q, U=U), kept=kept)
+
+
+def _reconciled(tmp_path, d, **kw):
+    ctx = ro.Ctx(cfg=ro.Config(**{**dict(log_dirs=[str(tmp_path)], manifests=[str(d.manifest)],
+                                         ledgers=[str(d.ledger)], accept_flagged_ledger=True,
+                                         out=str(tmp_path / "o")), **kw}))
+    t = ro.load_logs(ctx)
+    ro.coverage(ctx, t)
+    ro.reconcile(ctx, t)
+    return ctx
+
+
+def test_replayed_game_charges_reconcile_and_are_attributed(tmp_path, monkeypatch):
+    """The charged-call / Inspect replay path: every saved attempt has its ledger closure, the replay's discarded
+    charges are settled but in no saved call, and the three cost quantities stay apart."""
+    from harness.run import completed_cost
+    d = _replay_setup(tmp_path, monkeypatch)
+    r = _reconciled(tmp_path, d)
+    res, notes = r.res, " ".join(r.notes)
+    assert res["meta.ledger_reconciled"] is True
+    assert res["meta.cost_kept_games_usd"] == pytest.approx(d.kept) == res["meta.cost_all_usd"]
+    unsaved = 0.004 + 0.3 + 0.002 + 0.001
+    assert res["meta.ledger_settled_usd"] == pytest.approx(d.kept + unsaved)
+    assert res["meta.ledger_unmatched_settled_usd"] == pytest.approx(unsaved)
+    assert res["meta.ledger_unmatched_settled_n"] == 6
+    # the replayed game's discarded attempt: settled, attributed to an analysed game, never analysed
+    assert res["meta.ledger_unmatched_analysed_games_n"] == 4
+    assert res["meta.ledger_unmatched_analysed_games_usd"] == pytest.approx(0.304)
+    assert res["meta.ledger_unmatched_other_n"] == 2 and res["meta.ledger_unmatched_other_usd"] == pytest.approx(0.003)
+    assert "in no saved call" in notes
+    # full-reservation settlements (429, 200 without a cost, three 503s) apart from provider-reported charges
+    assert res["meta.ledger_full_reservation_n"] == 5
+    assert res["meta.ledger_full_reservation_usd"] == pytest.approx(0.25 + 0.3 + 0.3)
+    assert res["meta.ledger_full_reservation_usd.missing_cost"] == pytest.approx(0.85)
+    assert res["meta.ledger_provider_charged_usd"] == pytest.approx(d.kept + unsaved - 0.85)
+    # flag reasons by full name: the 429 is counted and admitted (D8b), the 200 is admitted but named in no deviation
+    assert res["meta.ledger_flag_reason.missing_cost_http_429"] == 1
+    assert res["meta.ledger_flag_reason.missing_cost_http_503"] == 3
+    assert res["meta.ledger_flags.missing_cost"] == 5                # the class count alone hides the 429
+    assert res["meta.ledger_flagged_admitted.missing_cost_http_429"] == 1
+    assert res["meta.ledger_flagged_admitted.missing_cost_http_200"] == 1
+    assert "meta.ledger_flagged_admitted.missing_cost_http_503" not in res      # unsaved: reported, not admitted
+    assert res["meta.ledger_flagged_attempts_admitted"] == 2
+    assert res["meta.ledger_flags_admitted_unlisted"] == "missing_cost:http_200" and "D8/D8a/D8b" in notes
+    for reason, named in (("missing_cost:http_429", True), ("missing_cost:http_503", True),
+                          ("transport_error:ReadTimeout", True), ("missing_cost:http_400", False),
+                          ("missing_cost:http_200", False), ("over_est_max", False)):
+        assert bool(ro.DECLARED_FLAG_RE.fullmatch(reason)) is named, reason
+    # without the audit switch, a flagged saved attempt closes the run
+    with pytest.raises(ro.AnalysisError, match="flagged paid attempt"):
+        _reconciled(tmp_path, d, accept_flagged_ledger=False)
+    # harness/run.py's end-of-run check sums the saved calls only, so it cannot match the ledger delta of a run in
+    # which Inspect replayed a game after charged calls; the gap is exactly the unsaved settlements reported here
+    used = completed_cost([d.log])
+    assert used == pytest.approx(d.kept)
+    assert res["meta.ledger_settled_usd"] - used == pytest.approx(res["meta.ledger_unmatched_settled_usd"])
+    assert abs(res["meta.ledger_settled_usd"] - used) > 1e-8
+
+
+def test_account_spend_is_an_external_input(tmp_path):
+    ctx = ro.Ctx(cfg=ro.Config(log_dirs=[], account_spend_usd=461.27,
+                               account_spend_source="tools/balance.py: $1,126.71 at 22:23 IST, $665.44 at 04:40 IST"))
+    ro.account_spend(ctx)
+    assert ctx.res["meta.account_spend_usd"] == pytest.approx(461.27)
+    assert "04:40 IST" in ctx.res["meta.account_spend_source"]
+    for bad in (dict(account_spend_usd=5.0), dict(account_spend_source="x"), dict(account_spend_usd=-1.0,
+                                                                                  account_spend_source="x"),
+                dict(account_spend_usd=float("nan"), account_spend_source="x")):
+        with pytest.raises(ro.AnalysisError, match="account-spend"):
+            ro.account_spend(ro.Ctx(cfg=ro.Config(log_dirs=[], **bad)))
+    with pytest.raises(SystemExit):
+        ro.main(["--logs", str(tmp_path), "--account-spend-usd", "5"])
+    pending = ro.Ctx(cfg=ro.Config(log_dirs=[]))
+    ro.account_spend(pending)
+    assert pending.res["meta.account_spend_usd"] == "pending" and any("account_spend" in n for n in pending.notes)
 
 
 def test_d12_monitors_see_the_same_game_set(tmp_path, monkeypatch):

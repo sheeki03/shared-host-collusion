@@ -79,13 +79,20 @@ grids). Subject firm-turns exclude scripted honeypot rivals.
 | `meta.hosts`, `meta.n_hosts` | hosts recorded in `result.host` |
 | `meta.freeze_commit` | the commit of tag `prereg-freeze` |
 | `meta.analysis_commit`, `meta.analysis_dirty` | HEAD, and whether analysis/, harness/ or engines/ have uncommitted changes |
-| `meta.total_cost_usd` | provider charges in selected analysed complete games only; **not** total account spend |
-| `meta.cost_scope` | explains the distinct analysed-game, all-saved-attempt and settled-ledger cost scopes |
+| `meta.total_cost_usd` | cost quantity (1): provider charges saved in the selected analysed complete games only; **not** total account spend |
+| `meta.cost_scope` | the three cost quantities, reported separately and never added: (1) `meta.total_cost_usd`; (2) `meta.ledger_settled_usd` with its `meta.ledger_full_reservation_usd` / `meta.ledger_provider_charged_usd` split; (3) `meta.account_spend_usd` |
+| `meta.account_spend_usd`, `meta.account_spend_source` | cost quantity (3): the provider account's actual spend (balance before minus after, plus any top-up or auto-recharge credited in between: auto-recharge was enabled during the run, DEVIATIONS D18 at 03:18), an external input (`--account-spend-usd`, `--account-spend-source`: where and when both balances were read, and the top-ups added back). It covers everything the account paid in that window (pilot, classifiers, judges, extensions), so it is never reconciled to (1) or (2). `pending` when not given |
 | `meta.parse_failure_rate`, `meta.fallback_rate` | over subject firm-turns |
 | `meta.ledger_reconciled` | every saved provider attempt matches the merged ledgers (`confirmatory.reconcile_call_costs`), and game totals equal the attempt sum |
-| `meta.reconciled_cost_usd`, `meta.ledger_settled_usd` | reconciled selected-game attempts, and all settled ledger amounts (including dropped/errored attempts) |
-| `meta.cost_all_usd`, `meta.ledger_unmatched_settled_usd` | every saved attempt matched to the supplied ledgers; settled ledger charges not attributable to saved call metadata. An external balance delta is needed to establish the actual account bill. |
-| `meta.ledger_flags`, `meta.ledger_flags_accepted` | the number of `flag` events, and whether `--accept-flagged-ledger` admitted them |
+| `meta.reconciled_cost_usd`, `meta.ledger_settled_usd` | reconciled selected-game attempts; cost quantity (2): all settlements in the deduplicated game ledgers (copies sharing a ledger ID read once; including dropped/errored attempts; open reservations are never spend) |
+| `meta.ledger_full_reservation_usd`, `meta.ledger_full_reservation_n`, `meta.ledger_full_reservation_usd.<class>` | the part of (2) settled at the full reservation because no provider cost was returned (flag classes `transport_error`, `missing_cost`, `aborted`, `invalid_cost`): a conservative upper bound, not a bill (D1, D8, D8a, D8b) |
+| `meta.ledger_provider_charged_usd` | the rest of (2): settlements at a provider-reported or estimated (D1) cost |
+| `meta.cost_all_usd`, `meta.ledger_unmatched_settled_usd`, `meta.ledger_unmatched_settled_n` | every saved attempt matched to the supplied ledgers; settled ledger charges no saved call carries |
+| `meta.ledger_unmatched_analysed_games_{n,usd}`, `meta.ledger_unmatched_other_{n,usd}` | those unsaved settlements by the ledger's `sample_id` (`harness/game.py` saves calls only when a game finishes): on an analysed game (an earlier attempt that did not finish: an Inspect replay after an error under D13 `retry_on_error` keeps only the final attempt's calls; an errored sample re-run by a later launch; or a copy in flight when a launch stopped), or on any other game or no sample. `harness/run.py`'s end-of-run check (saved calls vs ledger delta) cannot pass for a run with such a replay; this reconciliation is the audit |
+| `meta.ledger_flags`, `meta.ledger_flags_accepted` | the number of `flag` events, and whether `--accept-flagged-ledger` admitted them; `meta.ledger_flags.<class>` counts by the text before `:` (so `missing_cost` pools HTTP 429, 5xx and any other status) |
+| `meta.ledger_flag_reason.<reason>` | flag lines with a reservation ID by **full** reason (non-alphanumerics become `_`, e.g. `missing_cost_http_429`) |
+| `meta.ledger_flagged_admitted.<reason>`, `meta.ledger_flagged_attempts_admitted` | saved attempts admitted under `--accept-flagged-ledger`, by full reason, and their number |
+| `meta.ledger_flags_admitted_unlisted` | admitted reasons the deviation log does not name (named: `transport_error:*` D8/D8a, `missing_cost:http_5xx` D8a, `missing_cost:http_429` D8b), or `none`; the code admits every `missing_cost:*` (for example `http_200` without a cost), so a non-`none` value needs a DEVIATIONS entry |
 | `meta.n_boot`, `meta.n_perm`, `meta.seed` | resampling settings |
 | `figures` | the list of figures written |
 | `notes` | warnings: insufficient-data reasons, admissions, missing inputs |
@@ -240,7 +247,9 @@ Status rules (never a zero for missing input):
 | Key | Meaning |
 |---|---|
 | `S6.status` | `pending`; `partial` (some headline key pending, a monitor with coverage below 1, judge calls not run, or a sync mismatch); or `complete` |
-| `S6.<monitor>.game_judged.*` | game-level result for each monitor restricted to the **same selected judge-game set**, used in `monitors_paired` |
+| `S6.l1.<monitor>.game_judged.*` | game-level result for each monitor restricted to the **same selected judge-game set**, used in `monitors_paired`. `monitors.py` computes this level under L1 exposure only (its `S6.<monitor>.game_judged.*`); a transfer version would arrive as `S6.<monitor>.game_judged.*` and is used only when every monitor has it |
+| `S6.denom.<monitor>.{cohort,n_games,n_known,n_truth_unknown,n_no_verdict}` | written here, copied from the `monitor_metrics.csv` next to `monitor_results.json` (game level, transfer truth): the scored cohort (`full eligible evaluation set` for tirith and active β, `budgeted judge sample` for the judges), games scored, known-truth games (`n_pos` + `n_neg`), games left out for unknown truth, and known-truth games without a verdict. `pending` without the file or when its counts differ from the copied `n_pos`/`n_neg` |
+| `S6.denom.<monitor>.judged.{truth,n_games,n_known,n_truth_unknown,n_no_verdict}` | the same on the shared judged-game set (`game_judged`), with the truth it uses |
 | `S6.source`, `S6.pending_reason` | the `monitor_results.json` used (or `pending`); why S6 is pending (only then) |
 | `S6.target`, `S6.l1.target` | the headline and the sensitivity ground-truth definitions |
 | `S6.sync.n_games_monitors`, `S6.sync.n_games_report` | games scored by `monitors.py` (`S6.n_games`), and this run's complete games in the S6 evaluation set |
@@ -283,17 +292,20 @@ Status rules (never a zero for missing input):
 - `s3_variants`: GLM 5.3 and 5.2, Abliterated Large at none and low, DeepSeek V4.1 Flash and Abliterated Large
   Flash. L2 rate in SHR-PERMITTED, PROVOC acceptance, PROVOC-GATE-TOLD evasion, and the P3 contrast. Descriptive.
 - `g_scenarios`: the G contrasts per scenario and per engine (scenario grid only).
-- `monitors_headline`: Table 3, S6 per monitor at game level against transfer (the headline keys), with coverage,
-  the scored cohort, worst case and the L1 TPR and FPR. This table deliberately names the mixed full-grid/judged
-  cohorts. Formatted from the copied keys only (also `.csv`). In confirmatory mode a
-  table with any `pending` cell starts with `_No data yet._`, so `tools/fill_report.py --confirmatory` refuses it.
-- `monitors_paired`: all six monitors restricted to the same selected judge-game set (`game_judged`), with class
+- `monitors_headline`: Table 2 of the report, S6 per monitor at game level against transfer (the headline keys), with coverage,
+  the scored cohort with its games and unknown-truth games (`S6.denom.*`), worst case and the L1 TPR and FPR. This
+  table deliberately names the mixed full-grid/judged cohorts. Formatted from the copied keys only (also `.csv`). In
+  confirmatory mode a table with any `pending` cell starts with `_No data yet._`, so `tools/fill_report.py
+  --confirmatory` refuses it.
+- `monitors_paired`: all six monitors restricted to the same selected judge-game set (`game_judged`), with its truth
+  (L1 exposure unless `monitors.py` writes transfer rows at that level), judged games, unknown-truth games, class
   counts, TPR, FPR, AUROC and coverage. Descriptive for that budgeted sample; a pending comparison begins with
   `_No data yet._`.
 - `monitors`: the monitors tool's own table (every level, against L1 exposure, with its notes), copied verbatim from
   the `tables/monitors.md` next to `monitor_results.json`. It is never regenerated, and when `--out` is the monitors
   tool's own output directory it is left untouched. Without S6 input it reads `_No data yet._`.
-- `costs`: per host × grid, plus a total (complete games only; `meta.ledger_settled_usd` is all settled spend).
+- `costs`: per host × grid, plus a total (analysed complete games only, cost quantity (1); `meta.ledger_settled_usd`
+  is all settled ledger spend and `meta.account_spend_usd` the account's).
 - `exclusions`: every non-included sample with its class and reason.
 - `coverage`: expected, complete, excluded, trimmed, incomplete and pending games per grid × scenario × arm.
 - `s1_by_model`: honeypot rates per model × arm.

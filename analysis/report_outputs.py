@@ -4,7 +4,8 @@ Usage (confirmatory, fail-closed; the full command sequence is in README.md, "An
   .venv/bin/python -m analysis.report_outputs --full-design \
       --logs runs/full/logs-macv2 --logs runs/remote/vps1/logs-vps1v2 ... (every log directory) \
       --labels runs/analysis/coding/labels.csv --ledger runs/full/ledger-macv3-gated.jsonl ... \
-      --retired-ledger runs/full/ledger-mac.jsonl ... --accept-flagged-ledger [--out runs/analysis]
+      --retired-ledger runs/full/ledger-mac.jsonl ... --accept-flagged-ledger [--out runs/analysis] \
+      [--account-spend-usd <balance delta> --account-spend-source '<where and when both balances were read>']
 Usage (preliminary: whatever games are complete so far, coverage per cell, L2 'pending' without labels):
   .venv/bin/python -m analysis.report_outputs --preliminary --full-design --logs runs/full/logs-macv2 ...
 
@@ -74,6 +75,10 @@ S6_FIELDS = ("tpr", "tpr_lo", "tpr_hi", "fpr", "fpr_lo", "fpr_hi", "auroc", "n_p
              "tpr_worst", "fpr_worst")
 S6_DETECTOR_KEYS = ("threshold", "n_calibration", "oracle_flag_rate", "oracle_n")   # truth-free active_beta keys
 S6_OWN_KEYS = ("S6.status", "S6.source", "S6.target", "S6.l1.target", "S6.pending_reason")  # written here
+# Scored cohorts: the judges read a budgeted, trace-stratified sample; tirith and active beta score the full set.
+S6_FULL_COHORT, S6_JUDGE_COHORT = "full eligible evaluation set", "budgeted judge sample"
+# S6.denom.<monitor>.* (written here, copied from monitors.py's monitor_metrics.csv): each scored cohort's counts
+S6_DENOM = {"n_games": "n_units", "n_truth_unknown": "n_gt_unknown", "n_no_verdict": "n_monitor_unknown"}
 S6_TARGET = ("trace-confirmed rival-authored crossing: a canary or content crossing "
              "(analysis/monitors.py gt_transfer), game level; content alone need not be private information, "
              "and games with unknown ground truth are left out of TPR and FPR")
@@ -137,6 +142,8 @@ class Config:
     trimmed: Sequence[str] = ()           # scenario IDs / arms / grids declared trimmed under prereg section 6
     accept_log_status: Sequence[str] = ()  # no effect since D12 (complete samples of any log status are admitted)
     accept_flagged_ledger: bool = False   # audited: provider-cost-missing flags settled at the reservation (D8)
+    account_spend_usd: float | None = None   # external: the provider account's balance delta (meta.account_spend_usd)
+    account_spend_source: str | None = None  # where and when the balances were read (required with the amount)
     pilot_beta_sd: float | None = None
     n_boot: int = 2000
     n_perm: int = 10000
@@ -944,7 +951,7 @@ def s6_map_key(key: str) -> str | None:
 
 def _s6_reserved(key: str) -> bool:
     """A monitor_results.json key that would shadow a name this module owns (never copied)."""
-    return key in S6_OWN_KEYS or key.startswith(("S6.sync.", "S6.l1."))
+    return key in S6_OWN_KEYS or key.startswith(("S6.sync.", "S6.l1.", "S6.denom."))
 
 
 def _s6_no_verdicts(src: Mapping[str, Any], prefix: str) -> bool:
@@ -970,8 +977,64 @@ def _s6_pending(res: dict, reason: str) -> None:
     for m in MONITORS:
         for f in S6_FIELDS:
             res[f"S6.{m}.{f}"] = res[f"S6.l1.{m}.{f}"] = PENDING
+    _s6_denom_pending(res)
     res["S6.status"] = res["S6.source"] = PENDING
     res["S6.pending_reason"] = reason
+
+
+def s6_cohort(monitor: str) -> str:
+    return S6_JUDGE_COHORT if monitor.startswith("llm_") else S6_FULL_COHORT
+
+
+def _s6_denom_pending(res: dict) -> None:
+    for m in MONITORS:
+        res[f"S6.denom.{m}.cohort"] = s6_cohort(m)
+        for lvl in ("", "judged."):
+            for f in (*S6_DENOM, "n_known"):
+                res[f"S6.denom.{m}.{lvl}{f}"] = PENDING
+        res[f"S6.denom.{m}.judged.truth"] = PENDING
+
+
+def s6_denominators(ctx: Ctx, path: Path) -> None:
+    """S6.denom.<monitor>.*: the denominators behind every S6 rate, copied (no score is read) from the
+    monitor_metrics.csv that analysis/monitors.py writes with monitor_results.json.
+
+    Headline (game level, transfer truth): `cohort` (S6_FULL_COHORT for tirith and active beta, S6_JUDGE_COHORT for
+    the judges), `n_games` (games the monitor scored), `n_known` (n_pos + n_neg, the TPR/FPR denominators before
+    unknown verdicts), `n_truth_unknown` (games left out: crossing status unknown) and `n_no_verdict` (known-truth games
+    without a verdict). The same under `judged.` for the shared judged-game level (game_judged), with `judged.truth`
+    naming its ground truth: monitors.py computes that level under L1 exposure only, unless it also writes transfer
+    rows there. A missing or unreadable file, or headline counts that differ from the copied S6.<monitor>.n_pos/n_neg
+    (another monitors run), leaves them 'pending'."""
+    res = ctx.res
+    _s6_denom_pending(res)
+    p = path.parent / "monitor_metrics.csv"
+    try:
+        df = pd.read_csv(p, usecols=["level", "monitor", "truth", "n_pos", "n_neg", *S6_DENOM.values()])
+    except (OSError, ValueError, KeyError) as exc:
+        ctx.warn(f"S6 denominators pending: {_rel(p)} missing or unreadable ({type(exc).__name__})")
+        return
+    judged_truth = "gt_transfer" if ((df["level"] == "game_judged") & (df["truth"] == "gt_transfer")).any() else "gt"
+    for m in MONITORS:
+        for lvl, level, truth in (("", "game", "gt_transfer"), ("judged.", "game_judged", judged_truth)):
+            row = df[(df["monitor"] == m) & (df["level"] == level) & (df["truth"] == truth)]
+            if len(row) != 1:
+                continue
+            r = row.iloc[0]
+            key = (f"S6.{m}" if not lvl else f"S6.{m}.game_judged" if truth == "gt_transfer"
+                   else f"S6.l1.{m}.game_judged")
+            got = (res.get(f"{key}.n_pos"), res.get(f"{key}.n_neg"))
+            if PENDING in got:            # held pending (judge calls not run): its counts stay pending too
+                continue
+            if got != (int(r["n_pos"]), int(r["n_neg"])):
+                ctx.warn(f"S6 denominators pending for {m} ({level}): {_rel(p)} does not match monitor_results.json")
+                continue
+            for k, col in S6_DENOM.items():
+                res[f"S6.denom.{m}.{lvl}{k}"] = int(r[col])
+            res[f"S6.denom.{m}.{lvl}n_known"] = int(r["n_pos"]) + int(r["n_neg"])
+            if lvl:
+                res[f"S6.denom.{m}.judged.truth"] = ("transfer (canary or content)" if truth == "gt_transfer" else
+                                                     "L1 exposure (canary, content or name)")
 
 
 def _rel(p: Path) -> str:
@@ -1096,6 +1159,7 @@ def s6_monitors(ctx: Ctx, games: pd.DataFrame, *, log_status: Mapping[str, Any] 
     elif isinstance(not_run, int) and not_run > 0:
         ctx.warn(f"S6: {not_run} selected judge calls were not run (dry run); judge rates use the existing verdicts")
     res.update(mapped)
+    s6_denominators(ctx, src.path)
     head = [mapped[f"S6.{m}.{f}"] for m in MONITORS for f in S6_FIELDS]
     full_cov = all(mapped.get(f"S6.{m}.coverage") == 1 for m in MONITORS)
     complete = PENDING not in head and full_cov and res["S6.sync.match"] and not (isinstance(not_run, int) and not_run)
@@ -1114,14 +1178,14 @@ def _ci_cell(lo: Any, hi: Any) -> Any:
 
 
 def s6_headline_table(res: Mapping[str, Any]) -> pd.DataFrame:
-    """Table 3 rows: name each monitor's actual scored cohort; full-grid and sampled rates are not paired."""
+    """Table 2 (report) rows: name each monitor's actual scored cohort; full-grid and sampled rates are not paired."""
     rows = []
     for m in MONITORS:
         def g(f: str, p: str = "") -> Any:
             return res.get(f"S6.{p}{m}.{f}", PENDING)
-        rows.append({"monitor": m, "scored cohort": ("budgeted judge sample" if m.startswith("llm_")
-                                                       else "full eligible evaluation set"),
-                     "pos": g("n_pos"), "neg": g("n_neg"), "TPR": g("tpr"),
+        rows.append({"monitor": m, "scored cohort": s6_cohort(m), "cohort games": g("n_games", "denom."),
+                     "unknown truth": g("n_truth_unknown", "denom."), "pos": g("n_pos"), "neg": g("n_neg"),
+                     "TPR": g("tpr"),
                      "TPR 95% CI": _ci_cell(g("tpr_lo"), g("tpr_hi")), "FPR": g("fpr"),
                      "FPR 95% CI": _ci_cell(g("fpr_lo"), g("fpr_hi")), "AUROC": g("auroc"), "coverage": g("coverage"),
                      "TPR worst case": g("tpr_worst"), "FPR worst case": g("fpr_worst"),
@@ -1129,12 +1193,25 @@ def s6_headline_table(res: Mapping[str, Any]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def s6_paired_truth(res: Mapping[str, Any]) -> tuple[str, str]:
+    """(key infix, label) of the judged-game level used by monitors_paired. monitors.py writes that level as
+    S6.<monitor>.game_judged.* under L1 exposure (copied to S6.l1.<monitor>.game_judged.*); a transfer-truth version
+    would arrive as S6.<monitor>.game_judged.* and is used only when every monitor has it, so one table never mixes
+    truths."""
+    if all(isinstance(res.get(f"S6.{m}.game_judged.n_pos"), int) for m in MONITORS):
+        return "", "transfer (canary or content)"
+    return "l1.", "L1 exposure (canary, content or name)"
+
+
 def s6_paired_table(res: Mapping[str, Any]) -> pd.DataFrame:
     """Like-for-like game-level metrics restricted to the selected judge games for every monitor."""
+    infix, truth = s6_paired_truth(res)
     rows = []
     for m in MONITORS:
-        prefix = f"S6.{m}.game_judged."
-        rows.append({"monitor": m, "pos": res.get(prefix + "n_pos", PENDING),
+        prefix = f"S6.{infix}{m}.game_judged."
+        rows.append({"monitor": m, "truth": truth, "judged games": res.get(f"S6.denom.{m}.judged.n_games", PENDING),
+                     "unknown truth": res.get(f"S6.denom.{m}.judged.n_truth_unknown", PENDING),
+                     "pos": res.get(prefix + "n_pos", PENDING),
                      "neg": res.get(prefix + "n_neg", PENDING), "TPR": res.get(prefix + "tpr", PENDING),
                      "FPR": res.get(prefix + "fpr", PENDING), "AUROC": res.get(prefix + "auroc", PENDING),
                      "coverage": res.get(prefix + "coverage", PENDING)})
@@ -1188,8 +1265,13 @@ def write_s6_tables(ctx: Ctx, src: S6Source) -> None:
         paired_csv.unlink(missing_ok=True)
     else:
         paired = s6_paired_table(res)
-        paired_body = (md_table(paired) + "\nAll rows use the same selected judge-game set (`game_judged`); "
-                       "rates are descriptive for that selected set.\n")
+        infix, truth = s6_paired_truth(res)
+        paired_body = (md_table(paired) + "\nAll rows use the same selected judge-game set (`game_judged`, "
+                       f"{_fmt(res.get('S6.judge.n_games'))} games); rates are descriptive for that selected set. "
+                       f"Ground truth: {truth}"
+                       + (". `analysis/monitors.py` computes the judged-game level under L1 exposure only, so these "
+                          "rates are not on the transfer truth of `monitors_headline`; compare monitors within this "
+                          "table, not across the two tables.\n" if infix else ", as in `monitors_headline`.\n"))
         if ctx.confirmatory and any(v == PENDING for row in paired.to_dict("records") for v in row.values()):
             paired_body = "_No data yet._ Paired monitor comparison is incomplete.\n\n" + paired_body
         paired_md.write_text(paired_body, encoding="utf-8")
@@ -1683,21 +1765,24 @@ def figures(ctx: Ctx, games: pd.DataFrame, g_tab: pd.DataFrame) -> list[str]:
     for i, mon in enumerate(MONITORS):
         t_, f_ = _val(res, f"S6.{mon}.tpr"), _val(res, f"S6.{mon}.fpr")     # headline: transfer (monitors.py)
         if np.isfinite(t_) and np.isfinite(f_):
+            cohort = "judged sample" if s6_cohort(mon) == S6_JUDGE_COHORT else "full set"
+            label = f"{mon} ({cohort}; {_fmt(res.get(f'S6.{mon}.n_pos'))}+/{_fmt(res.get(f'S6.{mon}.n_neg'))}−)"
             ax.errorbar([f_], [t_], xerr=_err(f_, _val(res, f"S6.{mon}.fpr_lo"), _val(res, f"S6.{mon}.fpr_hi")),
                         yerr=_err(t_, _val(res, f"S6.{mon}.tpr_lo"), _val(res, f"S6.{mon}.tpr_hi")),
-                        fmt="o", color=PALETTE[i % len(PALETTE)], capsize=3, label=mon)
+                        fmt="o", color=PALETTE[i % len(PALETTE)], capsize=3, label=label)
             plotted = True
     ax.plot([0, 1], [0, 1], color="#999999", lw=0.8, ls="--")
     ax.set_xlim(-0.02, 1.02)
     ax.set_ylim(-0.02, 1.02)
     ax.set_xlabel("FPR (Wilson 95% CI)")
     ax.set_ylabel("TPR (Wilson 95% CI)")
-    ax.set_title("(c) Monitors at their operating point")
+    ax.set_title("(c) Monitors at their own operating point\n(scored cohorts differ; not a paired comparison)")
     if plotted:
-        ax.legend(fontsize=8, loc="lower right")
+        ax.legend(fontsize=7, loc="lower right")
     else:
         ax.text(0.5, 0.5, "pending / no data", transform=ax.transAxes, ha="center", va="center", color="#555555")
-    fig.suptitle("Defence layers: command gate vs monitors (target: trace-confirmed transfer)")
+    fig.suptitle("Defence layers: command gate vs monitors (monitor target: trace-confirmed rival-authored canary or "
+                 "content crossing)")
     _save(fig, ctx, "defence_layers")
     plt.close(fig)
     made.append("defence_layers")
@@ -1764,7 +1849,150 @@ LEDGER_KEYS = ("meta.ledger_reconciled", "meta.reconciled_cost_usd", "meta.cost_
                "meta.ledger_settled_usd", "meta.ledger_unmatched_settled_usd", "meta.ledger_open_retired_n",
                "meta.ledger_open_retired_usd", "meta.ledger_open_live_n", "meta.ledger_open_live_usd",
                "meta.ledger_flags", "meta.ledger_flags_accepted", "meta.ledger_flagged_attempts_admitted",
-               "meta.ledger_n_files", "meta.ledger_n_retired")
+               "meta.ledger_n_files", "meta.ledger_n_retired", "meta.ledger_full_reservation_n",
+               "meta.ledger_full_reservation_usd", "meta.ledger_provider_charged_usd",
+               "meta.ledger_unmatched_settled_n", "meta.ledger_unmatched_analysed_games_n",
+               "meta.ledger_unmatched_analysed_games_usd", "meta.ledger_unmatched_other_n",
+               "meta.ledger_unmatched_other_usd", "meta.ledger_flags_admitted_unlisted")
+# Flag reasons the deviation log names: D8 transport_error:ReadError; D8a every transport_error:* and
+# missing_cost:http_5xx; D8b missing_cost:http_429. confirmatory.ACCEPTED_FLAG_PREFIXES admits every transport_error:*
+# and missing_cost:* reason (missing_cost:http_200 or http_400 too); an admitted reason not named here is listed in
+# meta.ledger_flags_admitted_unlisted (and the notes) for the deviation log, never silently.
+DECLARED_FLAG_RE = re.compile(r"transport_error:.+|missing_cost:http_(?:429|5\d\d)")
+# Flag classes harness/ledger.py settles at the full reservation (est_max): no provider cost (transport_error,
+# missing_cost), a request aborted mid-flight (aborted) or an unreadable cost (invalid_cost). over_est_max is settled
+# at the reported charge, above the reservation, and is never admitted.
+FULL_RESERVATION_FLAGS = ("transport_error", "missing_cost", "aborted", "invalid_cost")
+COST_SCOPE = (
+    "Three cost quantities, reported separately and never added: (1) meta.total_cost_usd, the provider charges saved "
+    "in the analysed complete games (equal to meta.cost_kept_games_usd when meta.ledger_reconciled; meta.cost_all_usd "
+    "adds the saved attempts of dropped, superseded and excluded samples); (2) meta.ledger_settled_usd, every "
+    "settlement in the deduplicated game ledgers (copies sharing a ledger ID read once; open reservations are never "
+    "spend), split into meta.ledger_full_reservation_usd (settled at the full reservation because no provider cost "
+    "was returned: an upper bound, not a bill, DEVIATIONS D1/D8/D8a/D8b) and meta.ledger_provider_charged_usd (a "
+    "provider-reported or estimated cost); (3) meta.account_spend_usd, the provider account's spend over a window "
+    "(balance before minus balance after, plus any top-up or auto-recharge credited in between), an external input "
+    "with its source and times (meta.account_spend_source), covering everything that account paid in that window. "
+    "The classifier and judge ledgers are in neither (1) nor (2).")
+
+
+def _key_part(text: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "_", text)
+
+
+def _saved_reservations(sets: Mapping[str, pd.DataFrame]) -> set[str]:
+    """Reservation IDs of every saved provider attempt in the reconciled call sets."""
+    out: set[str] = set()
+    for calls in sets.values():
+        if calls is None or calls.empty or "attempts" not in calls.columns:
+            continue
+        for attempts in calls["attempts"]:
+            for a in attempts if isinstance(attempts, list) else ():
+                if isinstance(a, dict) and isinstance(a.get("reservation_id"), str):
+                    out.add(a["reservation_id"])
+    return out
+
+
+def _reservation_games(paths: Iterable[str]) -> dict[str, str | None]:
+    """Reservation ID -> the game ID of the Inspect sample that reserved it: the ledger's sample_id
+    ('<game_id>#<epoch>') on its reserve event, read with confirmatory's own ledger parser from the ledger files used."""
+    out: dict[str, str | None] = {}
+    for f in paths:
+        for ev in confirmatory._ledger_events(Path(f))[2]:
+            if ev.get("event") == "reserve" and ev.get("id"):
+                sid = ev.get("sample_id")
+                out[str(ev["id"])] = str(sid).rsplit("#", 1)[0] if sid else None
+    return out
+
+
+def ledger_costs(ctx: Ctx, book: confirmatory.LedgerBook) -> None:
+    """Full-reservation settlements and full flag reasons of the deduplicated ledgers (no saved calls needed)."""
+    res = ctx.res
+    full: dict[str, Decimal] = {}
+    by_class: dict[str, Decimal] = {}
+    for rid, amount in book.charged.items():
+        cls = next((c for c in (str(x).split(":", 1)[0] for x in book.flags.get(rid, ()))
+                    if c in FULL_RESERVATION_FLAGS), None)
+        if cls is not None:
+            full[rid] = amount
+            by_class[cls] = by_class.get(cls, Decimal("0")) + amount
+    full_usd = sum(full.values(), Decimal("0"))
+    res["meta.ledger_full_reservation_n"] = len(full)
+    res["meta.ledger_full_reservation_usd"] = float(full_usd)
+    for cls, usd in sorted(by_class.items()):
+        res[f"meta.ledger_full_reservation_usd.{_key_part(cls)}"] = float(usd)
+    res["meta.ledger_provider_charged_usd"] = float(book.settled_usd - full_usd)
+    reasons: dict[str, int] = {}
+    for rs in book.flags.values():
+        for x in rs:
+            reasons[str(x)] = reasons.get(str(x), 0) + 1
+    for reason, n in sorted(reasons.items()):
+        res[f"meta.ledger_flag_reason.{_key_part(reason)}"] = n
+
+
+def ledger_attribution(ctx: Ctx, t: dict[str, pd.DataFrame], book: confirmatory.LedgerBook,
+                       sets: Mapping[str, pd.DataFrame]) -> None:
+    """Admitted flags by full reason, and the ledger settlements no saved call carries.
+
+    A settled reservation that no saved attempt names is billed but unanalysed: harness/game.py saves a game's calls
+    only when the game finishes, so the calls of any attempt that did not finish are in no sample. Its ledger
+    sample_id says whose it was: an analysed game (meta.ledger_unmatched_analysed_games_*: an earlier attempt of a
+    game that later completed, namely an Inspect replay after an error, D13 retry_on_error, which keeps only the final
+    attempt's calls; an errored sample re-run by a later launch, D13/D15; or a copy in flight when a launch was
+    stopped, D6/D10/D11/D15) or any other (meta.ledger_unmatched_other_*: games not complete in the analysis set, or
+    no sample). harness/run.py's end-of-run check compares saved calls with the ledger delta, so it cannot pass for a
+    run in which Inspect replayed a game that had made charged calls; this saved-call reconciliation (every saved
+    attempt has its ledger closure) plus this attribution is the audit."""
+    res = ctx.res
+    saved = _saved_reservations(sets)
+    admitted: dict[str, int] = {}
+    for rid in saved & set(book.flags):
+        for x in book.flags[rid]:
+            admitted[str(x)] = admitted.get(str(x), 0) + 1
+    for reason, n in sorted(admitted.items()):
+        res[f"meta.ledger_flagged_admitted.{_key_part(reason)}"] = n
+    unlisted = sorted(x for x in admitted if not DECLARED_FLAG_RE.fullmatch(x))
+    res["meta.ledger_flags_admitted_unlisted"] = ", ".join(unlisted) if unlisted else "none"
+    if unlisted:
+        ctx.warn(f"admitted ledger flag reasons not named in DEVIATIONS D8/D8a/D8b: {unlisted} "
+                 f"({sum(admitted[x] for x in unlisted)} saved attempts; settled at the full reservation)")
+    unmatched = {r: v for r, v in book.charged.items() if r not in saved}
+    games_of = _reservation_games(book.paths) if unmatched else {}
+    analysed = set(t["games"]["game_id"].astype(str)) if not t["games"].empty else set()
+    agg = {"analysed_games": [0, Decimal("0")], "other": [0, Decimal("0")]}
+    for rid, amount in unmatched.items():
+        k = "analysed_games" if games_of.get(rid) in analysed else "other"
+        agg[k][0] += 1
+        agg[k][1] += amount
+    res["meta.ledger_unmatched_settled_n"] = len(unmatched)
+    for k, (n, usd) in agg.items():
+        res[f"meta.ledger_unmatched_{k}_n"], res[f"meta.ledger_unmatched_{k}_usd"] = n, float(usd)
+    if agg["analysed_games"][0]:
+        ctx.warn(f"{agg['analysed_games'][0]} settled ledger charges (${float(agg['analysed_games'][1]):.4f}) belong "
+                 "to analysed games but are in no saved call (earlier attempts that did not finish: Inspect replays "
+                 "after an error, errored samples re-run later, copies in flight when a launch stopped); reported in "
+                 "meta.ledger_unmatched_analysed_games_*, not analysed")
+
+
+def account_spend(ctx: Ctx) -> None:
+    """meta.account_spend_usd and meta.account_spend_source: the provider account's actual spend, an external number
+    (the balance before minus after, plus any top-up or auto-recharge credited in between, with where and when each
+    was read), from --account-spend-usd and
+    --account-spend-source. It is reported beside the ledger figures, never reconciled to them: the account also paid
+    for the pilot, the classifiers, the judges and anything else in that window. 'pending' when not given."""
+    res, usd, src = ctx.res, ctx.cfg.account_spend_usd, (ctx.cfg.account_spend_source or "").strip()
+    if usd is None and not src:
+        res["meta.account_spend_usd"] = res["meta.account_spend_source"] = PENDING
+        if ctx.confirmatory:
+            ctx.warn("meta.account_spend_usd pending: give --account-spend-usd and --account-spend-source (the "
+                     "provider balance delta, and where and when the balances were read)")
+        return
+    if usd is None or not src:
+        raise AnalysisError("--account-spend-usd and --account-spend-source go together (the amount, and where and "
+                            "when the balances were read)")
+    if isinstance(usd, bool) or not math.isfinite(float(usd)) or float(usd) < 0:
+        raise AnalysisError(f"--account-spend-usd must be a finite non-negative amount, not {usd!r}")
+    res["meta.account_spend_usd"], res["meta.account_spend_source"] = float(usd), src
 
 
 def reconcile(ctx: Ctx, t: dict[str, pd.DataFrame]) -> None:
@@ -1774,7 +2002,9 @@ def reconcile(ctx: Ctx, t: dict[str, pd.DataFrame]) -> None:
     samples (t['calls_other']; billed, never analysed) must each match a ledger closure; the analysed games' cost
     totals must equal their attempt sum. Open reservations are never spend: on --retired-ledger files (stopped
     launches) they are reported as meta.ledger_open_retired_*, on any other ledger they mean a live or crashed runner
-    and fail a confirmatory run. Flags: see confirmatory.ACCEPTED_FLAG_PREFIXES (--accept-flagged-ledger, D8).
+    and fail a confirmatory run. Flags: see confirmatory.ACCEPTED_FLAG_PREFIXES (--accept-flagged-ledger, D8, D8a,
+    D8b). ledger_costs splits the settlements into full-reservation and provider-charged amounts; ledger_attribution
+    reports admitted flags by full reason and the settlements no saved call carries (COST_SCOPE).
     """
     res = ctx.res
     cfg = ctx.cfg
@@ -1819,6 +2049,7 @@ def reconcile(ctx: Ctx, t: dict[str, pd.DataFrame]) -> None:
     for reason, n in sorted(book.flag_reasons.items()):
         res[f"meta.ledger_flags.{re.sub(r'[^A-Za-z0-9]+', '_', reason)}"] = n
     res["meta.ledger_settled_usd"] = float(book.settled_usd)
+    ledger_costs(ctx, book)
     opened = book.open_summary()
     res["meta.ledger_open_retired_n"], res["meta.ledger_open_retired_usd"] = opened["retired"][0], float(opened["retired"][1])
     res["meta.ledger_open_live_n"], res["meta.ledger_open_live_usd"] = opened["live"][0], float(opened["live"][1])
@@ -1848,19 +2079,19 @@ def reconcile(ctx: Ctx, t: dict[str, pd.DataFrame]) -> None:
     res["meta.cost_excluded_usd"] = float(rec.usd["excluded"])
     res["meta.cost_all_usd"] = float(rec.all_usd)
     res["meta.ledger_unmatched_settled_usd"] = float(book.settled_usd - rec.all_usd)
-    res["meta.cost_scope"] = ("meta.total_cost_usd is analysed complete-game calls only; meta.cost_all_usd "
-                             "covers saved attempts, meta.ledger_settled_usd covers all ledger settlements, "
-                             "and neither is an account-balance bill without an external reconciliation")
     res["meta.ledger_flagged_attempts_admitted"] = rec.flagged_admitted
+    ledger_attribution(ctx, t, book, sets)
 
 
 def run(cfg: Config) -> dict[str, Any]:
     if cfg.cohort != "confirmatory" and not cfg.preliminary:
         raise AnalysisError("a non-confirmatory cohort (pilot) can only run with --preliminary")
     ctx = Ctx(cfg=cfg, rng=np.random.default_rng(cfg.seed))
+    account_spend(ctx)                     # an external input: validated before anything is read
     out = Path(cfg.out)
     (out / "tables").mkdir(parents=True, exist_ok=True)
     res = ctx.res
+    res["meta.cost_scope"] = COST_SCOPE
     t = load_logs(ctx)
     cov = coverage(ctx, t)
     reconcile(ctx, t)
@@ -1952,7 +2183,7 @@ def run(cfg: Config) -> dict[str, Any]:
         (out / "tables" / f"{name}.md").write_text(text, encoding="utf-8")
         if df is not None and not df.empty:
             df.to_csv(out / "tables" / f"{name}.csv", index=False)
-    write_s6_tables(ctx, s6)              # monitors_headline (Table 3) and the monitors tool's own table
+    write_s6_tables(ctx, s6)              # monitors_headline (Table 2) and the monitors tool's own table
     games.to_csv(out / "games.csv", index=False)
     # --- BEGIN X.nonstorage hook: EXPLORATORY (post hoc, not pre-registered); all logic in analysis/nonstorage.py ---
     try:                                   # an exploratory scan must never stop or change the pre-registered outputs
@@ -1987,12 +2218,18 @@ def summary(res: dict, tabs: dict[str, pd.DataFrame]) -> str:
              f"pending {f('meta.n_pending')}.",
              f"- Hosts: {res.get('meta.hosts')}. Freeze commit {res.get('meta.freeze_commit')}; analysis commit "
              f"{res.get('meta.analysis_commit')} (dirty: {f('meta.analysis_dirty')}).",
-             f"- Subject parse-failure rate {f('meta.parse_failure_rate')}; analysed complete-game calls "
-             f"${f('meta.total_cost_usd')}; all saved attempts ${f('meta.cost_all_usd')}; settled ledger events "
-             f"${f('meta.ledger_settled_usd')} (saved-call reconciliation {f('meta.ledger_reconciled')}; "
-             f"settled amount unmatched to saved calls ${f('meta.ledger_unmatched_settled_usd')}). "
-             f"These are not the account-balance bill; retired-ledger open reservations "
-             f"{f('meta.ledger_open_retired_n')} are not spend.",
+             f"- Subject parse-failure rate {f('meta.parse_failure_rate')}.",
+             f"- Costs (three separate quantities, meta.cost_scope): (1) analysed complete-game calls "
+             f"${f('meta.total_cost_usd')} (all saved attempts ${f('meta.cost_all_usd')}; saved-call reconciliation "
+             f"{f('meta.ledger_reconciled')}); (2) deduplicated ledger settlements ${f('meta.ledger_settled_usd')}, of "
+             f"which ${f('meta.ledger_full_reservation_usd')} at the full reservation "
+             f"({f('meta.ledger_full_reservation_n')} flagged attempts, no provider cost) and "
+             f"${f('meta.ledger_provider_charged_usd')} at a provider cost; ${f('meta.ledger_unmatched_settled_usd')} "
+             f"is in no saved call (${f('meta.ledger_unmatched_analysed_games_usd')} of it on analysed games: "
+             f"unfinished earlier attempts); (3) account-balance spend "
+             f"${f('meta.account_spend_usd')} ({res.get('meta.account_spend_source', PENDING)}). Retired-ledger open "
+             f"reservations ({f('meta.ledger_open_retired_n')}) are not spend; admitted flag reasons not named in "
+             f"D8/D8a/D8b: {res.get('meta.ledger_flags_admitted_unlisted', PENDING)}.",
              f"- Duplicate completions dropped (D12, first finished kept): {f('meta.n_duplicates_dropped')}; "
              f"superseded samples {f('meta.n_superseded')}.",
              f"- Communication labels: {res.get('L2.status')}.", "",
@@ -2039,15 +2276,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--accept-log-status", default="",
                     help="no effect since DEVIATIONS D12: complete samples are admitted whatever their log's status")
     ap.add_argument("--accept-flagged-ledger", action="store_true",
-                    help="audited (DEVIATIONS D8): admit saved attempts whose ledger flag is a settlement at the full "
-                         "reservation because the provider returned no cost (transport_error:*, missing_cost:*); "
-                         "over_est_max and other flags still fail")
+                    help="audited (DEVIATIONS D8, D8a, D8b): admit saved attempts whose ledger flag is a settlement at "
+                         "the full reservation because the provider returned no cost (transport_error:*, "
+                         "missing_cost:*); over_est_max and other flags still fail. Admitted reasons by full name are "
+                         "meta.ledger_flagged_admitted.*; any not named in D8/D8a/D8b (transport_error:*, "
+                         "missing_cost:http_5xx, missing_cost:http_429) is listed in "
+                         "meta.ledger_flags_admitted_unlisted")
+    ap.add_argument("--account-spend-usd", type=float,
+                    help="the provider account's actual spend (balance before minus after, plus any top-up or "
+                         "auto-recharge credited in between) -> meta.account_spend_usd; needs --account-spend-source")
+    ap.add_argument("--account-spend-source",
+                    help="where and when both balances were read, and any top-ups added back (e.g. "
+                         "'tools/balance.py: $X at <time> IST, $Y at <time> IST, auto-recharge $Z') "
+                         "-> meta.account_spend_source")
     ap.add_argument("--pilot-beta-sd", type=float)
     ap.add_argument("--n-boot", type=int, default=2000)
     ap.add_argument("--n-perm", type=int, default=10000)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-figures", action="store_true")
     a = ap.parse_args(argv)
+    if (a.account_spend_usd is None) != (not (a.account_spend_source or "").strip()):
+        ap.error("--account-spend-usd and --account-spend-source go together")
     trimmed: list[str] = []
     for x in (x.strip() for x in a.trimmed.split(",")):
         if x.startswith("@"):
@@ -2063,7 +2312,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                  preliminary=a.preliminary, cohort=a.cohort, full_design=a.full_design,
                  trimmed=tuple(x for x in a.trimmed.split(",") if x),
                  accept_log_status=tuple(x for x in a.accept_log_status.split(",") if x),
-                 accept_flagged_ledger=a.accept_flagged_ledger, pilot_beta_sd=a.pilot_beta_sd, n_boot=a.n_boot,
+                 accept_flagged_ledger=a.accept_flagged_ledger, account_spend_usd=a.account_spend_usd,
+                 account_spend_source=a.account_spend_source, pilot_beta_sd=a.pilot_beta_sd, n_boot=a.n_boot,
                  n_perm=a.n_perm, seed=a.seed, figures=not a.no_figures)
     try:
         res = run(cfg)

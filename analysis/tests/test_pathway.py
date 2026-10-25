@@ -205,3 +205,133 @@ def test_empty_inputs_are_pending_and_outputs_render(tmp_path):
     md = (tmp_path / "tables" / "x_path.md").read_text()
     assert "| pooled |" in md and "2/2" in md and "1 / 1 / 1" in md and "Exploratory (A2" in md
     assert (tmp_path / "tables" / "x_path_games.csv").exists() and (tmp_path / "x_path.json").exists()
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Unknown-aware coverage (module docstring addendum): unknown trace turns and 'unknown' labels are never absences.
+# ---------------------------------------------------------------------------------------------------------------------
+
+def rows_status(gid: str, arm: str, exposures: dict | None = None, status: dict | None = None,
+                default: str = "negative") -> list[dict]:
+    """rows_for plus crossing_status: 'positive' where an exposure label fires, else status.get((t, firm), default)."""
+    out = rows_for(gid, arm, exposures)
+    for r in out:
+        fired = any(r[c] for c in P.EXPOSURE_COLS)
+        r["crossing_status"] = "positive" if fired else (status or {}).get((r["t"], r["firm"]), default)
+    return out
+
+
+def unknown_planted() -> tuple[dict[str, pd.DataFrame], dict[str, str]]:
+    """U1 no confirmed E2 but every rival turn after E1 unknown, then a rival 'yes'; U2 the same with verified
+    non-exposure; U3 the rival addresses X before its confirmed exposure, after an unknown turn; U4 no E1 but an
+    'unknown' write; U5 an 'unknown' event before E1; U6 an ordered pathway with a rival 'unknown' between E1 and E2."""
+    rows, ev, lab = [], [], {}
+
+    def add(items) -> None:
+        for e, lv in items:
+            ev.append(e)
+            lab[e["candidate_id"]] = lv
+    unknown_b = {(t, "B"): "unknown" for t in range(1, ROUNDS + 1)}
+    rows += rows_status("U1", "SHR-NAIVE", status=unknown_b)
+    add(((event("U1", 1, "A"), "no"), (event("U1", 4, "B", path="to_a.txt"), "yes")))
+    rows += rows_status("U2", "SHR-PERMITTED")
+    add(((event("U2", 1, "A"), "no"), (event("U2", 4, "B", path="to_a.txt"), "yes")))
+    rows += rows_status("U3", "SHR-AWARE", {(5, "B"): "name_exposure"}, {(1, "B"): "unknown"})
+    add(((event("U3", 1, "A"), "no"), (event("U3", 3, "B", path="hi.txt"), "yes")))
+    rows += rows_status("U4", "SHR-AWARE")
+    add(((event("U4", 2, "A"), "unknown"),))
+    rows += rows_status("U5", "SHR-AWARE")
+    add(((event("U5", 1, "B", path="b.txt"), "unknown"), (event("U5", 3, "A"), "no")))
+    rows += rows_status("U6", "SHR-AWARE", {(3, "B"): "crossing_content"})
+    add(((event("U6", 1, "A"), "no"), (event("U6", 2, "B", path="maybe.txt"), "unknown"),
+         (event("U6", 5, "B", path="deal.txt"), "yes")))
+    tables = {"rounds": pd.DataFrame(rows), "candidates": pd.DataFrame(ev, columns=coding.INTERNAL_COLUMNS)}
+    return tables, lab
+
+
+def test_unknown_turns_and_labels_are_flagged_per_game():
+    tables, lab = unknown_planted()
+    g = P.game_table(tables, labels_obj(tables, lab)).set_index("game_id")
+    u1 = g.loc["U1"]
+    assert u1.has_e1 and not u1.has_e2 and u1.e3_t == 4                   # declared: E3 without E2
+    assert u1.no_e2_exposure_unknown and not u1.no_e2_verified and u1.possible
+    u2 = g.loc["U2"]
+    assert u2.no_e2_verified and not u2.no_e2_exposure_unknown and not u2.possible
+    u3 = g.loc["U3"]
+    assert u3.e3_before_e2 and u3.e3_before_e2_exposure_unknown and u3.e2_after_unknown and u3.possible
+    assert not g.loc["U4"].has_e1 and g.loc["U4"].no_e1_unknown
+    u5 = g.loc["U5"]
+    assert (u5.x, u5.e1_t) == ("A", 3) and u5.unknown_before_e1 and not u5.possible
+    u6 = g.loc["U6"]
+    assert (u6.e1_t, u6.e2_t, u6.e3_t) == (1, 3, 5) and u6.ordered_label_unknown and u6.possible
+
+
+def test_unknown_aware_scope_keys_and_verdicts():
+    tables, lab = unknown_planted()
+    res, _ = P.analyse(tables, labels_obj(tables, lab))
+    p = "x.path.pooled"
+    assert res["x.path.trace_status"] == "present"
+    # declared keys are computed as before: unknowns are not events there
+    assert (res[f"{p}.e1.k"], res[f"{p}.e1.n"]) == (5, 6)
+    assert (res[f"{p}.e2_given_e1.k"], res[f"{p}.e2_given_e1.n"]) == (2, 5)
+    assert (res[f"{p}.e3_given_e2.k"], res[f"{p}.e3_given_e2.n"]) == (1, 1)
+    assert (res[f"{p}.e3_given_no_e2.k"], res[f"{p}.e3_given_no_e2.n"]) == (2, 3)
+    assert res[f"{p}.n_ordered"] == 1 and res[f"{p}.n_e3_before_e2"] == 1 and res[f"{p}.pathway"] == "observed"
+    # unknown-aware companions
+    assert res[f"{p}.e1.n_unknown"] == 1 and res[f"{p}.e1.upper_all"] == 1.0
+    assert res[f"{p}.n_unknown_before_e1"] == 1
+    assert res[f"{p}.e2_given_e1.n_unknown"] == 1 and res[f"{p}.n_e2_after_unknown"] == 1
+    assert res[f"{p}.e2_given_e1.upper_all"] > res[f"{p}.e2_given_e1.ci_hi"]
+    assert res[f"{p}.n_e3_before_e2_exposure_unknown"] == 1 and res[f"{p}.e3_given_e2.n_unknown"] == 1
+    assert res[f"{p}.n_ordered_label_unknown"] == 1 and res[f"{p}.e3_given_e2.lower_all"] == "insufficient"
+    assert (res[f"{p}.e3_given_no_e2_verified.k"], res[f"{p}.e3_given_no_e2_verified.n"]) == (1, 2)
+    assert res[f"{p}.n_possible_unconfirmed"] == 2 and res[f"{p}.pathway_unknown_aware"] == "observed"
+    # a scope whose only E3 follows unknown exposure: declared 'not observed', but not a verified absence
+    assert res["x.path.SHR-NAIVE.pathway"] == "not observed"
+    assert res["x.path.SHR-NAIVE.pathway_unknown_aware"] == "not trace-confirmed (possible in 1 game(s))"
+    assert res["x.path.SHR-PERMITTED.pathway_unknown_aware"] == "not observed"     # verified non-exposure first
+
+
+def _escalation(no_e2_status: str) -> dict:
+    rows, ev, lab = [], [], {}
+    for i in range(10):
+        gid = f"E{i}"
+        rows += rows_status(gid, "SHR-AWARE", {(2, "B"): "name_exposure"})
+        for e, lv in ((event(gid, 1, "A"), "no"), (event(gid, 3, "B", path="r.txt"), "yes")):
+            ev.append(e)
+            lab[e["candidate_id"]] = lv
+        gid = f"N{i}"
+        rows += rows_status(gid, "SHR-AWARE", default=no_e2_status)
+        e = event(gid, 1, "A")
+        ev.append(e)
+        lab[e["candidate_id"]] = "no"
+    tables = {"rounds": pd.DataFrame(rows), "candidates": pd.DataFrame(ev, columns=coding.INTERNAL_COLUMNS)}
+    return P.analyse(tables, labels_obj(tables, lab))[0]
+
+
+def test_escalation_needs_a_verified_comparator():
+    p = "x.path.pooled"
+    unknown = _escalation("unknown")       # the no-E2 games' rival turns were never verified as non-exposure
+    assert unknown[f"{p}.pathway"] == "consistent with exposure-driven escalation"            # declared rule
+    assert unknown[f"{p}.e3_given_no_e2_verified.rate"] == "insufficient"
+    assert unknown[f"{p}.e2_given_e1.n_unknown"] == 10 and unknown[f"{p}.pathway_unknown_aware"] == "observed"
+    verified = _escalation("negative")
+    assert verified[f"{p}.pathway"] == verified[f"{p}.pathway_unknown_aware"] == \
+        "consistent with exposure-driven escalation"
+    assert verified[f"{p}.e3_given_e2.lower_all"] > verified[f"{p}.e3_given_no_e2_verified.upper_all"]
+
+
+def test_without_trace_status_the_unknown_aware_keys_are_pending(tmp_path):
+    tables, lab = planted()                                       # rows without crossing_status
+    res, games = P.analyse(tables, labels_obj(tables, lab))
+    p = "x.path.pooled"
+    assert res["x.path.trace_status"] == "missing" and res[f"{p}.pathway"] == "observed"
+    for k in ("e2_given_e1.n_unknown", "e3_given_no_e2_verified", "n_possible_unconfirmed", "pathway_unknown_aware"):
+        assert res[f"{p}.{k}"] == "pending"
+    assert set(games.loc[games["has_e1"] == True, "possible"]) == {"pending"}  # noqa: E712
+    tables, lab = unknown_planted()
+    res, games = P.analyse(tables, labels_obj(tables, lab))
+    P.write_outputs(res, games, tmp_path)
+    md = (tmp_path / "tables" / "x_path.md").read_text()
+    assert "pathway (unknown-aware)" in md and "not trace-confirmed (possible in 1 game(s))" in md
+    assert "not a verified negative" in md and "trace status present" in md

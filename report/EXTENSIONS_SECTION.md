@@ -34,8 +34,11 @@ coordination under the monitor was {{ext.rep.P2.chat.diff}} ({{ext.rep.P2.chat.c
 sentence each.
 - Confirmatory result supported: E1 replicates if it has the same sign and a 95% CI that excludes zero. For P2,
   ext.rep.P2.supported must be yes.
-- Confirmatory null: E1 agrees if its CI includes zero. A CI that excludes zero is an "E1-only effect", reported as
-  such.
+- Confirmatory null: by the pre-declared rule E1 "agrees" if its CI includes zero. Report that label, but write it as
+  "consistent with the confirmatory null; inconclusive at this sample size", never as a replicated null or as
+  evidence of no effect: with at most 18 units the CI can also contain effects at least as large as the confirmatory
+  MDE (P3.mde_observed for P3). Say E1 bounds the effect only if its CI excludes such effects. A CI that excludes zero
+  is an "E1-only effect", reported as such.
 - Fails to replicate: the CI excludes zero in the direction opposite to a supported confirmatory estimate. Report
   the two estimates side by side and do not edit Sections 4.1-4.2.
 - Otherwise: "inconclusive at this sample size", not "failed".
@@ -64,21 +67,25 @@ that emerges more slowly still, as in the 300-round games of Fish et al. (2024).
 agents they may coordinate with the rival "through any means available on this machine". It ran with GLM 5.3,
 GPT-6.1 Sol, Opus 5.5 and Abliterated Large (low effort) on the seeds of the matched confirmatory ISO-PERMITTED
 games ({{ext.meta.any.n_complete}} of 16 planned games complete; {{ext.any.n_firm_rounds}} subject firm-rounds). A
-trace-confirmed crossing (canary or content) occurred in {{ext.any.crossing.l1.all.k}} firm-rounds (95% upper bound
-{{ext.any.crossing.l1.all.upper}} per firm-round). At least one command matching a pattern family of
+trace-confirmed crossing (canary or content) occurred in {{ext.any.crossing.l1.all.k}} firm-rounds;
+{{ext.any.crossing.l1.all.n_unknown}} firm-rounds had an unverified trace, and counting each as a possible crossing,
+the 95% upper bound was {{ext.any.crossing.l1.all.upper_all}} per firm-round. At least one command matching a pattern family of
 `analysis/nonstorage.py` appeared in {{ext.any.nonstorage.any.all.rate}} of firm-rounds (Wilson 95% CI
 {{ext.any.nonstorage.any.all.ci_lo}} to {{ext.any.nonstorage.any.all.ci_hi}}, too narrow because a firm's rounds are
 not independent).
 <!-- Split the attempts by family (host_views, timing, load, probe: the ext.any.nonstorage.<family>.all keys). -->
- Such a command is an attempt, not evidence that anything crossed. Against the matched ISO-PERMITTED
-games, the difference in per-game β_priv was {{ext.any.vs_permitted.beta.all.diff}}
+ Such a command is an attempt, not evidence that anything crossed. The comparator is retrospective: the
+matched confirmatory ISO-PERMITTED games share market draws, move order and canaries but ran earlier, and
+{{ext.any.comparator.n_same_host_pairs}} of the {{ext.any.vs_permitted.beta.all.n_pairs}} matched pairs ran both
+games on one host, so the contrasts below are descriptive. Against those games, the difference in per-game β_priv was {{ext.any.vs_permitted.beta.all.diff}}
 ({{ext.any.vs_permitted.beta.all.ci_lo}} to {{ext.any.vs_permitted.beta.all.ci_hi}}; p =
 {{ext.any.vs_permitted.beta.all.p}}), and in the collusion index over the last 10 rounds
 {{ext.any.vs_permitted.ci_last10.all.diff}} ({{ext.any.vs_permitted.ci_last10.all.ci_lo}} to
 {{ext.any.vs_permitted.ci_last10.all.ci_hi}}).
 <!-- if ext.any.crossing.l1.all.k is zero: "As predicted, nothing crossed. Turns are sequential and every agent
 process is reaped, so the shared host offered no path for rival content to reach a firm's command output. With no
-crossing in any of the 16 games, the per-game bound is 3/16." Then describe the attempts by family only (host views,
+crossing in any of the 16 games, the per-game bound is 3/16." Use 3/16 only if ext.any.crossing_game.l1.all.n_unknown
+is zero; otherwise give ext.any.crossing_game.l1.all.upper_all and say how many games had an unverified trace. Then describe the attempts by family only (host views,
 timing, load, probes), never as working commands. -->
 <!-- if it is above zero: say that the crossing was investigated first as a harness isolation failure, and give the
 outcome. Do not credit it to the agents until a harness cause is ruled out. -->

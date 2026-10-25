@@ -63,12 +63,24 @@ byte-identical; if you pin your own hash instead, your gate is not the study's b
 **3. Offline self-tests ($0).**
 
 ```bash
-.venv/bin/python -m pytest -q engines/tests analysis/tests   # pure Python
+.venv/bin/python -m pytest -q engines/tests analysis/tests tools/tests   # pure Python
 .venv/bin/python -m pytest -q harness/tests                  # Docker sandbox tests; the paid test runs only if SHC_REAL_CALLS is set
 .venv/bin/python harness/tests/e2e_offline.py                # mock-LLM positive/negative control of the whole pipeline (Docker)
 .venv/bin/python tools/bench_offline.py run-mock --confirm-docker --games 3 --rounds 12 --concurrency 3
 .venv/bin/python -m harness.run --plan full --cap 1 --dry-run   # writes the 1,131 game specs, makes no calls
 ```
+
+Every non-paid, non-Docker test in one command. A missing Docker socket makes the Docker tests skip, and the two
+paid tests run only when `SHC_REAL_CALLS` or `SHC_MONITOR_REAL_CALLS` is set:
+
+```bash
+env -u SHC_REAL_CALLS -u SHC_MONITOR_REAL_CALLS DOCKER_HOST=unix:///nonexistent/docker.sock \
+  .venv/bin/python -m pytest -q -p no:cacheprovider engines/tests analysis/tests harness/tests tools/tests
+```
+
+A fresh clone has neither the ignored `runs/` folder (pilot and confirmatory logs, recorded shard files, the overflow
+dispatcher) nor the tirith binary. The tests that read them skip and name what they need. The shard-planning tests
+in `tools/tests/test_run_ops.py` fall back to the first split rebuilt by `tools/make_shards.py`.
 
 **4. Pilot** (paid; seeds 9000+, never used in estimates). `--init-ledger` creates a new ledger once and refuses an
 existing one; resume a ledger by omitting it.
@@ -121,6 +133,14 @@ the run used 10,280 / 16,120 / 4,200. The exact assignment requires the recorded
 chunks, but not the final operational host assignment. Re-running a seed repeats its exogenous draws, move order and
 canaries, while stochastic model responses can differ.
 
+The realized assignment is recorded from the logs instead, by `tools/run_manifest.py` ($0, read-only; step 6.2b
+below). For every game it lists the host label and run tag (from the log's path), the launch (Inspect log file,
+eval_id, run_id, start time, final status), each sample's start and finish times, completeness and D12 selection, and
+which copy the analysis keeps. It adds coverage per seed and per matched set (model, scenario, seed) with the hosts
+the kept copies ran on, the shard files that listed each game (with their sha256), and per-ledger event counts, open
+reservations and byte-prefix copies. It writes no model text, prompts, canaries, error messages (only the exception
+class) or hostnames: each recorded machine becomes an alias (m1, m2, ...). Whether to publish it is the author's call.
+
 `tools/resume_plan.py` re-plans unfinished games for `--shard-file` / `--exclude-ids-file`. `tools/sync_logs.py`
 copies a VPS's `runs/full/logs-<host>/` and its ledger to `runs/remote/<host>/` (read-only on the remote side).
 
@@ -130,23 +150,45 @@ Run from the repo root once every runner has finished. The full confirmatory seq
 ```bash
 # 1. Pull every remote host's logs and ledgers to runs/remote/<host>/ (read-only on the remote side).
 .venv/bin/python tools/sync_logs.py
-# 2. Every log directory and every game ledger (bash or zsh arrays). A stopped launch's ledger (D6, D10, D11) is
-#    retired: its never-settled reservations are reported, never counted. Add any later stopped runner's ledger.
-LOGS=(runs/full/logs-* runs/remote/*/logs-*)
-LEDGERS=(runs/full/ledger-*.jsonl runs/remote/*/ledger-*.jsonl)
-RETIRED=(runs/full/ledger-mac.jsonl runs/full/ledger-macv2.jsonl runs/remote/vps1/ledger-vps1.jsonl
-         runs/remote/vps1/ledger-vps1v2.jsonl runs/remote/vps2/ledger-vps2.jsonl runs/remote/vps2/ledger-vps2v2.jsonl)
+# 2. Every log directory and every game ledger (bash or zsh arrays), host by host. runs/remote/ledgers/ is not a
+#    host: it holds older copies of five per-host ledgers (same ledger IDs; identical to or byte prefixes of the
+#    per-host files), so it is left out. A ledger is retired when its launch ended before finishing: its
+#    never-settled reservations are reported, never counted. At the 02:20 IST sync nine retired ledgers held open
+#    reservations (macv2 4, vps1 13, vps1v2 15, vps2 4, vps2v2 3, instabox-core 20, instabox-spill-3 23,
+#    instabox2-pool 31, instabox3-pool 13). If a runner is stopped later, add its ledger here: a ledger with open
+#    reservations that is not retired fails step 5.
+HOSTS=(instabox instabox2 instabox3 vps1 vps2)
+LOGS=(runs/full/logs-*)
+LEDGERS=(runs/full/ledger-*.jsonl)
+for h in "${HOSTS[@]}"; do LOGS+=(runs/remote/$h/logs-*); LEDGERS+=(runs/remote/$h/ledger-*.jsonl); done
+RETIRED=(runs/full/ledger-mac.jsonl runs/remote/vps1/ledger-vps1.jsonl runs/remote/vps2/ledger-vps2.jsonl   # D6
+         runs/full/ledger-macv2.jsonl                                                                      # D10
+         runs/remote/vps1/ledger-vps1v2.jsonl runs/remote/vps2/ledger-vps2v2.jsonl                         # D11
+         runs/remote/instabox/ledger-instabox-spill-2.jsonl            # ended by the 00:37 network drop (D13)
+         runs/remote/instabox/ledger-instabox-core.jsonl runs/remote/instabox/ledger-instabox-spill-3.jsonl
+         runs/remote/instabox2/ledger-instabox2-pool.jsonl runs/remote/instabox3/ledger-instabox3-pool.jsonl)  # D15
 .venv/bin/python -m analysis.game_set "${LOGS[@]}"   # $0: counts, duplicates and the copy kept (ids, timestamps)
+# 2b. $0: the sanitized run manifest (section 5 above) -> runs/analysis/manifest/. Its printed ledger lines are the
+#     run audit: every ledger with open reservations must be in RETIRED, and none may show CONFLICTS.
+MARGS=(--out-dir runs/analysis/manifest --overwrite)
+for f in runs/shards/*.json runs/shards-v2/*.json runs/remote/*/shards/*.json; do MARGS+=(--shard "$f"); done
+for f in "${LEDGERS[@]}"; do MARGS+=(--ledger "$f"); done
+.venv/bin/python tools/run_manifest.py "${MARGS[@]}" "${LOGS[@]}"
 # 3. S6 monitor replay and judges -> runs/analysis/monitor_results.json, monitor_scores.csv, tables/monitors.md.
-#    The judges are paid, on a dedicated ledger created once (outside the game-ledger globs above).
-mkdir -p runs/analysis
-.venv/bin/python -c "from harness.ledger import BudgetLedger; BudgetLedger('runs/analysis/judge-ledger.jsonl', 10.0)"
-SHC_LEDGER_PATH=runs/analysis/judge-ledger.jsonl SHC_BUDGET_CAP_USD=10 \
-  .venv/bin/python -m analysis.monitors --logs "${LOGS[@]}" --out runs/analysis --judge-budget 10 --run-judges
-# 4. L2 / chat labels (paid; llm_coder creates its own ledger), the blinded hand-check sheet (a person fills
-#    runs/analysis/handcheck/handcheck_sheet.csv), then the agreement.
+#    The judges are paid, on a dedicated ledger outside the game-ledger globs above, created once:
+#    runs/analysis/judges/ledger.jsonl with a $25 cap (the job started 26 Oct 02:20 IST). A later run reopens it, and
+#    a ledger reopens only with its current cap (a different one needs an audited cap_change).
+mkdir -p runs/analysis/judges
+[ -e runs/analysis/judges/ledger.jsonl ] || \
+  .venv/bin/python -c "from harness.ledger import BudgetLedger; BudgetLedger('runs/analysis/judges/ledger.jsonl', 25.0)"
+SHC_LEDGER_PATH=runs/analysis/judges/ledger.jsonl SHC_BUDGET_CAP_USD=25 \
+  .venv/bin/python -m analysis.monitors --logs "${LOGS[@]}" --out runs/analysis --judge-budget 25 --run-judges
+# 4. L2 / chat labels (paid), the blinded hand-check sheet (a person fills
+#    runs/analysis/handcheck/handcheck_sheet.csv), then the agreement. llm_coder creates its ledger on first use and
+#    reopens it after: runs/analysis/coding/ledger.jsonl (job started 02:20 IST), $50 since its audited cap_change
+#    (DEVIATIONS D18, 02:28 IST).
 .venv/bin/python -m analysis.llm_coder label "${LOGS[@]}" --out runs/analysis/coding \
-  --ledger runs/analysis/coding/ledger-l2-coder.jsonl --cap <usd>
+  --ledger runs/analysis/coding/ledger.jsonl --cap 50
 .venv/bin/python -m analysis.llm_coder handcheck "${LOGS[@]}" --out runs/analysis/coding \
   --handcheck-dir runs/analysis/handcheck
 .venv/bin/python -m analysis.llm_coder agreement --out runs/analysis/coding --handcheck-dir runs/analysis/handcheck
@@ -169,7 +211,8 @@ Game set (deviation D12, `analysis/game_set.py`, used by both `analysis.monitors
 complete games are admitted from logs of any status (stopped launches stay "started"); a game completed more than
 once keeps the copy that finished first (ties: earlier log start, then log path), the others are listed in
 `tables/duplicates` and `meta.n_duplicates_dropped`; errored samples of a game completed elsewhere are superseded,
-not exclusions. Ledger copies that share a ledger ID (for example a second synced copy) are read once.
+not exclusions. Ledger copies that share a ledger ID (for example a second synced copy) are read once: the longer
+file is used, and the run fails unless the shorter is its byte prefix.
 Every saved call is reconciled, including those of dropped and superseded samples (`meta.cost_all_usd`; the analysed
 games alone are `meta.cost_kept_games_usd`). `--accept-flagged-ledger` (D8) admits attempts settled at their
 reservation because the provider returned no cost (`transport_error:*`, `missing_cost:*`), never `over_est_max`.

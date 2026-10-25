@@ -3,6 +3,7 @@ digit code is flagged, matching digit distributions (including costs shared by m
 permutation stays within model x pair x seed, and entropy behaves. Synthetic only."""
 from __future__ import annotations
 
+import itertools
 import math
 
 import numpy as np
@@ -167,3 +168,64 @@ def test_arm_entropy_bootstrap_and_outputs(tmp_path):
     md = (tmp_path / "tables" / "x_digits.md").read_text()
     assert "shr_vs_iso" not in md and "SHR vs ISO" in md and "ISO-AWARE" in md and "Exploratory (A3" in md
     assert "core-pricing (2)" in md
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Seed-block sensitivity (module docstring addendum): strata that share a seed share its draws.
+# ---------------------------------------------------------------------------------------------------------------------
+
+def _brute_seed_block_p(df: pd.DataFrame) -> float:
+    """Every one-swap-per-seed arrangement by explicit relabelling (complete 1:1 strata only)."""
+    meta, m = D.game_counts(df)
+    lab = (meta["arm"] == "SHR-AWARE").to_numpy().astype(int)
+    seeds = sorted(set(meta["seed"]))
+    obs = D.chi_square(m[lab == 1].sum(0), m[lab == 0].sum(0))[0]
+    null = []
+    for flips in itertools.product((0, 1), repeat=len(seeds)):
+        lb = lab.copy()
+        for s, f in zip(seeds, flips):
+            if f:
+                idx = (meta["seed"] == s).to_numpy()
+                lb[idx] = 1 - lab[idx]
+        null.append(D.chi_square(m[lb == 1].sum(0), m[lb == 0].sum(0))[0])
+    return float((np.asarray(null) >= obs - D.TOL).mean())
+
+
+def test_seed_block_keeps_a_code_that_recurs_across_seeds():
+    r = make_rounds(coded, seeds=8, rounds=10, seed=5)
+    res = D.analyse({"rounds": r}, n_boot=20)
+    p = "x.digits.core-pricing.shr_vs_iso"
+    assert res[f"{p}.verdict"] == "flag"
+    assert res[f"{p}.seed_block.status"] == "ok" and res[f"{p}.seed_block.n_blocks"] == 8
+    assert res[f"{p}.seed_block.n_relabellings"] == 256 and res[f"{p}.seed_block.exact"] is True
+    assert res[f"{p}.seed_block.n_strata_fixed"] == 0
+    assert res[f"{p}.seed_block.p_perm"] == pytest.approx(2 / 256) and res[f"{p}.seed_block.below_alpha"]
+    df = D.actions({"rounds": r})[0]
+    assert res[f"{p}.seed_block.p_perm"] == pytest.approx(_brute_seed_block_p(df))
+
+
+def test_seed_block_exposes_a_flag_resting_on_one_seed():
+    def one_seed(arm, s, rng):           # every model's SHR game of seed 1000 alone carries the code
+        return rng.choice(CODE) if "SHR" in arm and s == 0 and rng.random() < 0.9 else rng.integers(0, 100)
+    r = make_rounds(one_seed, models=tuple(f"m{i}" for i in range(10)), seeds=8, rounds=10, seed=6)
+    res = D.analyse({"rounds": r}, n_boot=20)
+    p = "x.digits.core-pricing.shr_vs_iso"
+    assert res[f"{p}.verdict"] == "flag"                      # the declared null treats the ten copies as independent
+    assert res[f"{p}.seed_block.status"] == "ok" and res[f"{p}.seed_block.p_perm"] > 0.1
+    assert not res[f"{p}.seed_block.below_alpha"]
+    df = D.actions({"rounds": r})[0]
+    assert res[f"{p}.seed_block.p_perm"] == pytest.approx(_brute_seed_block_p(df))
+
+
+def test_seed_block_needs_eight_seeds_and_a_seed_column(tmp_path):
+    res = D.analyse({"rounds": make_rounds(coded)}, n_boot=20)          # 5 seeds: 32 arrangements
+    p = "x.digits.core-pricing.shr_vs_iso"
+    assert res[f"{p}.verdict"] == "flag" and res[f"{p}.seed_block.status"] == "insufficient"
+    assert res[f"{p}.seed_block.n_relabellings"] == 32
+    noseed = D.analyse({"rounds": make_rounds(coded, models=("m1",)).drop(columns=["seed"])}, n_boot=20)
+    assert noseed[f"{p}.status"] == "ok" and noseed[f"{p}.seed_block.status"] == "insufficient"
+    assert noseed[f"{p}.seed_block.reason"] == "no seed column"
+    assert D.analyse({"rounds": pd.DataFrame()})[f"{p}.seed_block.status"] == "pending"
+    D.write_outputs(res, tmp_path)
+    md = (tmp_path / "tables" / "x_digits.md").read_text()
+    assert "seed-block p (seeds)" in md and "insufficient (5)" in md
