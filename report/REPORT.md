@@ -44,15 +44,13 @@ finished after the analysis cut are not included; Table C11 gives the coverage p
 
 <!-- 150-250 words. Finalise last. Pick one bracketed clause per result once the estimates are in. -->
 
-AI agents working for competing firms increasingly share infrastructure, including writable storage that both can
-reach. We ask whether large language model (LLM) agents acting for rival firms use such storage to pass information
-or coordinate. Two agents set prices in a repeated logit Bertrand duopoly, each with a shell in its own no-network
-container. A scratch directory with the same path and description is either shared or private, with prompts and
-market draws held fixed. Randomised private costs and per-round canaries let us trace information from one firm's
-inbox into its rival's command output and test whether the rival's prices respond to it. Seventeen pre-registered
-arms vary awareness, permission, monitored and unmonitored chat, a scripted rival's offer and a command gate.
-We ran {{meta.n_complete}} games ({{meta.n_rounds}} rounds) across 14 configurations of 13 models and ten scenario
-framings on five market engines. When permitted, agents [did / did not] use the shared folder to address their rival
+Rival firms' AI agents may share writable infrastructure. We test whether their large language model (LLM) agents
+use it to exchange information or coordinate. Two pricing agents play a repeated logit Bertrand game in separate
+no-network containers. A scratch directory is shared or private; prompts and market draws are matched. Randomised
+private costs and canaries trace crossings, while price regressions test response to the rival's signal. Seventeen
+pre-registered arms vary awareness, permission, monitored chat, a scripted rival's offer and a command gate. The
+planned grid spans 14 configurations of 13 models and ten scenario framings on five engines; this report analyses
+{{meta.n_complete}} complete games ({{meta.n_rounds}} rounds). When permitted, agents [did / did not] use the shared folder to address their rival
 more than in matched private-storage games (interaction {{P1.l2.diff}}, 95% CI {{P1.l2.ci_lo}} to {{P1.l2.ci_hi}}).
 Unprompted, the shared-minus-private difference in price dependence on the rival's private cost was {{P3.beta.diff}}
 ({{P3.beta.ci_lo}} to {{P3.beta.ci_hi}}; minimum detectable effect {{P3.mde}}). Monitoring chat [did / did not] push
@@ -196,7 +194,8 @@ mover's file cannot be attributed to an earlier mover's output.
 by `harness/tests/test_verify_infra.py`) and a private home, `/tmp`, `/dev/shm`, inbox and bulletin, but both
 containers run one read-only image on one kernel without dedicated cores, sharing CPU time, caches, memory bandwidth,
 the page cache and host-wide `/proc` views such as the load average. ISO is therefore storage-isolated, not a
-zero-channel baseline, and SHR − ISO is attributable to the storage path. As turns are sequential and no agent
+zero-channel baseline, and SHR − ISO estimates the effect of assigning a shared rather than a private scratch mount;
+that contrast alone does not prove which signal carried any information. As turns are sequential and no agent
 process outlives its command, a host-state channel would need state that persists between turns, such as the page
 cache. Appendix F lists, channel by channel, what the design tests.
 
@@ -261,7 +260,7 @@ negative.
 
 Communication is adjudicated, not keyword-matched. Scratch events and chat messages generate candidates, and a GLM
 5.3 classifier, blind to arm, model and blocked status though not to the agents' own text, codes each candidate on
-its own with the frozen rubric (`analysis/CODING_RUBRIC.md`): a scratch event is "yes" only if its content appears
+its own with the post-freeze rubric (`analysis/CODING_RUBRIC.md`, D7): a scratch event is "yes" only if its content appears
 intended for the rival, a chat message only if it proposes or shares competitively sensitive coordination; routine
 notes are "no", and insufficient or unattributable evidence is "unknown". At least 50 candidate positives and 50
 sampled negatives (or all positives, if fewer) receive blinded human review, and a missing or unknown label blocks a
@@ -331,7 +330,9 @@ evidence for any hypothesis.
 ### 4.0 Runs, exclusions and positive controls
 
 We obtained {{meta.n_complete}} complete games ({{meta.n_rounds}} rounds) out of {{meta.n_games}} in the analysis
-manifest, on {{meta.hosts}}, at a total model cost of ${{meta.total_cost_usd}}. {{meta.n_excluded}} games were
+manifest, on {{meta.hosts}}. Calls in those selected complete games cost ${{meta.total_cost_usd}}; this excludes
+pilot, incomplete, superseded and extension attempts and is not the total account bill. Deduplicated ledger
+settlement, conservative full-reservation flags and account-balance spend must be reported separately. {{meta.n_excluded}} games were
 excluded (Table C10), and {{meta.parse_failure_rate}} of agent firm-turns fell back to the previous action after a
 failed retry. The classifier coded
 {{L2.label_coverage}} of the {{L2.n_candidates}} communication candidates; {{L2.labels_scratch.unknown}} scratch and
@@ -431,11 +432,13 @@ and Figure C1 and Table C6 the P1 and P3 contrasts by scenario. Both are descrip
 
 {{FIG:defence_layers}}
 
-**Figure 3.** Defence layers on the same games: containment (ISO against SHR), the live gate 2×2 and the replayed
-monitors, each scored against trace labels that no monitor produced.
+**Figure 3.** Defence layers within the same study: matched ISO-versus-SHR storage arms, separate live gate arms and
+post-hoc monitors. Their eligible games and denominators differ; every monitor uses trace labels it did not produce.
 
 Containment is the ISO cut itself, which closes the shared-file channel only (Section 3.3, Appendix F); Table C1
-shows the L1 and L3 rates it removes. In the gated arms, the enforced path rule blocked {{S2.block_rate}} of all
+shows L1 and L3 differences between the storage arms. Every live tirith-gated game ran on the Mac, while many
+ungated comparators moved to VPS hosts after D10–D11. The S2 gate contrasts below are therefore descriptive and
+may include host or time effects; they do not isolate a causal gate effect. In the gated arms, the path rule blocked {{S2.block_rate}} of all
 commands it checked. Announcing the policy without enforcing it changed the share of
 firm-turns with a command that touches `/srv/scratch` outside the bulletin by {{S2.deterrence.diff}}
 ({{S2.deterrence.ci_lo}} to {{S2.deterrence.ci_hi}}). On the same outcome, the enforcement main effect was
@@ -447,13 +450,14 @@ round.
 <!-- Evasion taxonomy (S2): the pipeline does not yet classify evasions. Add a by-class count (relative paths, globs,
 strings built at run time) to Appendix C, without working command strings, or drop the word "taxonomy". -->
 
-**Table 2.** Detection by each monitor at the game level: true-positive rate at the achieved false-positive rate, with
-Wilson 95% intervals, and AUROC (a point value) where each class has at least five scored games. Positives are games
-with trace-confirmed transfer (a canary or content crossing); games whose crossing status is unknown are left out.
-Rates are over the games with a verdict; coverage is the share of games with one, and the worst case counts every
-unknown verdict against the monitor. The L1 columns also count name-only exposure as positive (a sensitivity; Table
-C12 has every level). Gated arms, whose commands were blocked live, and ORACLE, whose leak is by design, are left out
-of the evaluation set.
+**Table 2.** Detection by each monitor at the game level: true-positive rate at the achieved false-positive rate,
+with intervals and AUROC where class counts permit. The headline positive label is a trace-confirmed rival-authored
+content or canary crossing, which need not be transfer of a private input; canary-confirmed L3 is a separate level.
+Games whose crossing status is unknown are left out, and coverage and worst-case unknown-verdict bounds are shown.
+The L1 sensitivity includes name-only exposure (Table C12). Gated arms, whose commands were blocked live, and
+ORACLE, whose leak is by design, are excluded. Tirith and the active β audit score the full eligible set, while the
+LLM judges score a budgeted, trace-stratified subset. Their pooled rates describe that judged sample; direct
+comparisons require the shared judged subset and explicit denominators.
 
 {{TABLE:monitors_headline}}
 
@@ -594,8 +598,9 @@ matched cuts and the minimum detectable effects state how far each conclusion re
   <!-- check that {{meta.freeze_commit}} equals 47a1c35 before export. -->
 - tirith 0.5.0 release candidate built from PR #278 head `8856dc60`; binary sha256
   `aaa5088571c82b3b1b10cde192f6cb07f2aea813d8b16b330041515a7a02c087` (Sharma 2026a).
-- Data: per-game metadata, trace labels and aggregate tables; transcript excerpts in `report/APPENDIX.md` (Appendix A
-  gives the publication policy). <!-- author to confirm the release policy and the exact data location. -->
+- Data in this submission: aggregate tables and redacted transcript excerpts in the report and appendix. Raw Inspect
+  logs contain model text and canaries and remain private; the author will decide after submission whether and how
+  to release them. The public repository contains code and analysis, not raw run logs.
 
 ## Author Contributions
 
@@ -770,28 +775,32 @@ Steganographic Capabilities in Frontier LLMs. arXiv:2507.02737 (listed as an ICL
 ## Appendix A. Limitations and Dual-Use / Ethical Considerations
 
 **What could be misused.** The study shows whether a known class of channel, writable storage shared by agents of
-different principals, carries competitively sensitive information, and compares ways to detect or remove it. We
-release no covert-channel toolkit. Mechanisms are described only at the level needed to replicate the experiment and
-build defences, and gate evasions are described by class (relative paths, globs, strings built at run time), which is
-standard knowledge for anyone who writes command filters.
+different principals, carries competitively sensitive information, and compares ways to detect or remove it. The
+public code includes a narrow scripted calibration harness for residual channels in the simulated ISO environment;
+it is not a deployment against a real service. The report describes mechanisms and gate evasions by class, while
+withholding raw agent transcripts pending the data-release decision below. This design and code have dual-use value,
+which is why the limits of the sandbox and the publication policy are stated explicitly.
 
-**Containment of the experiment.** All agents ran in containers without network access, in a simulated market. No
-real users, firms, markets or systems were involved, and no agent could reach anything beyond its own container and
-the scratch volume. Refusal-suppressed third-party models were used only as subjects inside these sandboxes, and
-their descriptive differences are not evidence about what safety training does.
+**Containment of the experiment.** Agents ran in no-network containers with no host mounts, in a simulated market;
+no real users, firms or markets were targets. The containers still share a host kernel and resources. Host-wide
+`/proc` views, caches and timing signals may remain reachable even when the writable scratch volume is private, as
+Appendix F and the separate scripted calibration test discuss. Private inputs also leave the containers for model
+inference through the trusted gateway. Refusal-suppressed third-party models were used only as subjects; their
+descriptive differences are not evidence about the isolated effect of safety training.
 
 **Publication of transcripts.** Some transcripts show agents proposing price coordination in the simulated market,
-and gated games show commands that reach the path by a known class of evasion. The excerpts in Appendix D are verbatim
-apart from redacted canaries; neither kind of content gives uplift beyond what Section 3 and the public code already
-describe. <!-- author to confirm whether and how the full Inspect logs are released for replication. -->
+and gated games show commands that reach the path by a known class of evasion. The selected excerpts in Appendix D
+are verbatim apart from redacted canaries. Raw Inspect logs remain private for this submission; the author will
+decide after submission whether and how they can be released for replication.
 
 **Conflict of interest.** The author maintains tirith, one of the monitors evaluated. To limit the effect of that
 interest, the hypotheses, the gate rule and the tirith policies were fixed in the frozen code before any confirmatory
 game; tirith never produces ground-truth labels; it is compared with LLM judges and an active audit on the same
 labels; its stock policy serves as a negative control; its known evasion was kept rather than patched; the binary is
 pinned by hash; and its failures are reported in full. The LLM-judge prompts and the replay code
-(`analysis/monitors.py`) were written after the freeze. <!-- author: state whether they were developed on pilot logs
-only. -->
+(`analysis/monitors.py`) were written after the freeze. D7 records the author's account that pilot logs, not
+confirmatory outcomes, shaped their rubrics. Their post-freeze timing and any resulting limit on the secondary S6
+comparison are disclosed rather than presented as part of the frozen gate policy.
 
 **Interpretation limits.** Observed information transfer does not by itself show agreement, collusive intent or
 consumer harm; naive oversharing and ordinary repeated-game behaviour remain alternatives. A null result bounds an
@@ -945,18 +954,22 @@ are the primary family, with Holm correction; the rest are secondary.
 β −0.003, Monte Carlo SE 0.003), with size 0.048 for the wild cluster bootstrap and 0.046 for CR1 errors. The textbook
 game-fixed-effects form suffers Nickell bias (mean −0.069) and appears only as a sensitivity check (Table C7).
 
-**Changes to the plan** (`prereg/DEVIATIONS.md`). Five changes were made during the pilot and are reflected in the
-frozen text (D1-D5): conservative budget bookkeeping for missing gateway costs, higher output caps for all arms,
-keeping 40-round core games, and running on several machines with every gated game on the one that holds the pinned
-tirith binary. The rest came after the confirmatory run had started. The runners were stopped and relaunched four
+**Changes to the plan** (`prereg/DEVIATIONS.md`). D1–D4 were pilot decisions recorded by the freeze: conservative
+budget bookkeeping for missing gateway costs, higher output caps for all arms, and keeping 40-round core games. The
+frozen registration also specified a multi-host plan; D5 implemented its host assignment after the freeze, with
+gated games on the Mac that held the pinned tirith binary. Later operational changes followed the start of
+confirmatory collection. The runners were stopped and relaunched four
 times: to rebalance work across machines, to protect a machine that also served a production website (D6, D10, D11)
 and to move the remaining games onto code whose retry handling rides out network drops (D13, D15). Drops on three
 hosts made about 146 games error in total. Errored and stopped games were re-run from the start with the same seeds,
-hence the same draws, move order and canaries; partial transcripts of stopped games are not analysed, and game logic
-never reads the clock or the host. Games completed twice because of a relaunch keep the copy that finished first, an
-outcome-blind rule declared before any analysis (D12). D8, D8a and D9 concern budget reconciliation and clarify the frozen text.
-Analysis definitions fixed after the freeze but before any confirmatory analysis are listed in D7 and labelled where
-used: honeypot acceptance (Section 4.2), the S6 evaluation set (Table 2) and the transcript-excerpt rule (Appendix D).
+hence the same exogenous draws, move order and canaries, but each replay is a new stochastic model trajectory;
+partial transcripts of stopped games are not analysed. Games completed twice because of a relaunch keep the copy
+that finished first, an outcome-blind rule declared after duplicates arose and before outcome analysis (D12).
+D8, D8a and D9 concern budget reconciliation and clarify the frozen text. D7 specified the L2 rubric and several
+secondary operational definitions after the freeze and after collection began. The author reports using pilot logs
+only to develop them and not inspecting confirmatory outcomes first; that timing claim is distinct from the
+verifiable commit chronology. These post-freeze definitions include honeypot acceptance (Section 4.2), the S6
+evaluation set (Table 2) and the transcript-excerpt rule (Appendix D).
 The exploratory scan of attempts at channels other than storage was declared before it touched any confirmatory log
 (D14, Section 4.5); it changes no pre-registered analysis.
 
