@@ -187,6 +187,8 @@ def run_mock(args: argparse.Namespace) -> int:
         print(f"note: effective sample concurrency is at most {args.games}")
 
     # The only model instantiated here is a scripted in-process mock. No provider keys are read or used.
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
     from inspect_ai import eval as inspect_eval
     from inspect_ai.model import get_model
     from harness.game import shc_games
