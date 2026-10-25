@@ -1,13 +1,17 @@
 """End-to-end report outputs: Inspect logs -> every pre-registered estimate, table and figure.
 
-Usage (confirmatory, fail-closed):
-  .venv/bin/python -m analysis.report_outputs \
-      --logs runs/full/logs-mac --logs runs/full/logs-vps1 --logs runs/full/logs-vps2 \
-      --manifest runs/full/specs_full-all-mac.json --manifest runs/full/specs_full-all-vps1.json \
-      --manifest runs/full/specs_full-all-vps2.json \
-      --labels runs/analysis/labels.csv --ledger runs/full/ledger-mac.jsonl --ledger ... [--out runs/analysis]
+Usage (confirmatory, fail-closed; the full command sequence is in README.md, "Analysis and report"):
+  .venv/bin/python -m analysis.report_outputs --full-design \
+      --logs runs/full/logs-macv2 --logs runs/remote/vps1/logs-vps1v2 ... (every log directory) \
+      --labels runs/analysis/coding/labels.csv --ledger runs/full/ledger-macv3-gated.jsonl ... \
+      --retired-ledger runs/full/ledger-mac.jsonl ... --accept-flagged-ledger [--out runs/analysis]
 Usage (preliminary: whatever games are complete so far, coverage per cell, L2 'pending' without labels):
-  .venv/bin/python -m analysis.report_outputs --preliminary --logs runs/full/logs-mac --manifest ...
+  .venv/bin/python -m analysis.report_outputs --preliminary --full-design --logs runs/full/logs-macv2 ...
+
+Game set (DEVIATIONS D12, analysis/game_set.py, shared with analysis/monitors.py): complete samples are admitted
+whatever their log's final status; a game completed more than once keeps the copy that finished first (tables/
+duplicates, meta.n_duplicates_dropped); errored samples of a game completed elsewhere are superseded, not exclusions.
+Every saved call, including those of dropped and superseded samples, is reconciled against the union of the ledgers.
 
 Writes under --out (default runs/analysis): results.json (flat dotted keys, documented in analysis/RESULT_KEYS.md),
 tables/*.md, figures/*.png + *.svg and summary.md. tools/fill_report.py renders report/REPORT.md from them.
@@ -39,18 +43,15 @@ import shutil
 import subprocess
 import sys
 import warnings as _warnings
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Callable, Iterable, Mapping, Sequence
-from unittest import mock
 
 import numpy as np
 import pandas as pd
 
-from analysis import coding, confirmatory, dataset, monitors, stats
+from analysis import coding, confirmatory, game_set, monitors, stats
 
 ROOT = Path(__file__).resolve().parent.parent
 CORE = "core-pricing"
@@ -80,6 +81,12 @@ S6_L1_TARGET = ("L1 exposure: a canary, content or name-exposure crossing (analy
 S3_MODELS = ("glm-5.3", "glm-5.2", "abliterated-large@none", "abliterated-large@low", "deepseek-v4.1-flash-1017",
              "abliterated-large-flash")
 PREREG_EXCLUSION_PREFIXES = ("sample error", "parse-failure rate above")
+# Exclusions-table classes that are not exclusions of a game (DEVIATIONS D12; analysis/game_set.py)
+OUTSIDE_CLASS = "outside cohort (never included)"
+SUPERSEDED_CLASS = "superseded by complete rerun"
+DUPLICATE_CLASS = "dropped duplicate (D12)"
+LOG_COPY_CLASS = "second copy of a log (ignored)"
+NOT_EXCLUSION_CLASSES = (OUTSIDE_CLASS, SUPERSEDED_CLASS, DUPLICATE_CLASS, LOG_COPY_CLASS)
 ACCEPT_THRESHOLD = 0.5      # honeypot acceptance: mean last-10-round collusion index at least half-way to collusive
 MIN_POOLED_GAMES = 10       # wild-cluster inference needs enough clusters (stats.pooled_beta: about 20+)
 SCRATCH_RE = re.compile(r"/srv/scratch(?!/bulletin)(?:/|\b|$)")
@@ -101,7 +108,7 @@ CONTRACT_KEYS = (
     *(f"placebo.beta_first.{f}" for f in ("est", "ci_lo", "ci_hi")),
 )
 CONTRACT_TABLES = ("per_arm_rates", "per_seed", "models", "s3_variants", "g_scenarios", "monitors", "monitors_headline",
-                   "costs", "exclusions")
+                   "costs", "exclusions", "duplicates")
 CONTRACT_FIGURES = ("displacement", "capability_propensity", "defence_layers", "nulls_mde", "scenarios")
 # Okabe-Ito colour-blind-safe palette.
 PALETTE = ("#0072B2", "#E69F00", "#009E73", "#D55E00", "#CC79A7", "#56B4E9", "#F0E442", "#000000")
@@ -120,13 +127,14 @@ class Config:
     coding_summary: str | None = None     # analysis/llm_coder.py summary.json (None: coding.* 'pending')
     coding_agreement: str | None = None   # analysis/llm_coder.py hand-check agreement.json
     ledgers: Sequence[str] = ()
+    retired_ledgers: Sequence[str] = ()   # ledgers of stopped launches (D6, D10, D11): open reservations tolerated
     out: str = str(ROOT / "runs" / "analysis")
     preliminary: bool = False
     cohort: str = "confirmatory"          # 'pilot' is a development cohort: never a confirmatory estimate
     full_design: bool = False             # expected set = harness.arms.full_design() (the frozen 1,131 games)
     trimmed: Sequence[str] = ()           # scenario IDs / arms / grids declared trimmed under prereg section 6
-    accept_log_status: Sequence[str] = ()  # audited: final eval statuses whose complete samples may enter
-    accept_flagged_ledger: bool = False   # audited: transport-error flags settled conservatively (prereg D1/D2)
+    accept_log_status: Sequence[str] = ()  # no effect since D12 (complete samples of any log status are admitted)
+    accept_flagged_ledger: bool = False   # audited: provider-cost-missing flags settled at the reservation (D8)
     pilot_beta_sd: float | None = None
     n_boot: int = 2000
     n_perm: int = 10000
@@ -141,6 +149,7 @@ class Ctx:
     notes: list[str] = field(default_factory=list)
     tables: dict[str, pd.DataFrame] = field(default_factory=dict)
     rng: np.random.Generator = field(default_factory=lambda: np.random.default_rng(0))
+    selection: Any = None                         # the D12 game_set.GameSet (load_logs)
 
     @property
     def confirmatory(self) -> bool:
@@ -157,85 +166,44 @@ class Ctx:
 # Loading: several log directories, host per game, preliminary reads of live logs
 # ----------------------------------------------------------------------------------------------------------------------
 
-@contextmanager
-def _patched_reader(ctx: Ctx, hosts: dict, statuses: dict):
-    """Wrap dataset.read_eval_log once per read: record host/status; in preliminary mode admit flushed samples of
-    still-running logs (each sample is still checked for completeness by dataset._sample_problem)."""
-    real = dataset.read_eval_log
-    allow = set(ctx.cfg.accept_log_status) | ({"started"} if ctx.cfg.preliminary else set())
-
-    def reader(info):
-        name = str(getattr(info, "name", info))
-        try:
-            log = real(info)
-        except Exception as exc:  # a live log can be mid-flush
-            if ctx.confirmatory:
-                raise
-            ctx.warn(f"unreadable log skipped (preliminary): {name}: {type(exc).__name__}: {str(exc)[:120]}")
-            return SimpleNamespace(status="unreadable", samples=[])
-        for s in log.samples or []:
-            meta = s.metadata or {}
-            gid = meta.get("game_id")
-            hosts[(name, gid)] = (meta.get("result") or {}).get("host")
-            statuses[(name, gid)] = log.status
-        if log.status != "success" and log.status in allow:
-            return SimpleNamespace(status="success", samples=log.samples)
-        return log
-
-    with mock.patch.object(dataset, "read_eval_log", reader):
-        yield
-
-
 def load_logs(ctx: Ctx) -> dict[str, pd.DataFrame]:
-    parts: dict[str, list[pd.DataFrame]] = {}
-    hosts: dict = {}
-    statuses: dict = {}
+    """Every log of every --logs directory through analysis.game_set.load_tables, the loader analysis/monitors.py
+    shares (DEVIATIONS D12): complete samples are admitted whatever their log's final status, a game completed more
+    than once keeps the copy that finished first (the others are listed in t['duplicates'] and as exclusions), and
+    errored samples of a game completed elsewhere are superseded. The saved calls of samples outside the analysis are
+    t['calls_other'] (column 'selection'), for the ledger reconciliation only."""
+    dirs: list[str] = []
     for d in ctx.cfg.log_dirs:
         if not Path(d).exists():
             if ctx.confirmatory:
                 raise AnalysisError(f"log directory missing: {d}")
             ctx.warn(f"log directory missing (preliminary): {d}")
             continue
-        with _patched_reader(ctx, hosts, statuses):
-            t = dataset.load(d, cohort=ctx.cfg.cohort, allow_exclusions=True)
-        for k, v in t.items():
-            parts.setdefault(k, []).append(v.assign(log_dir=str(d)) if k in ("games", "exclusions") else v)
-    out = {k: pd.concat([x for x in v if not x.empty], ignore_index=True) if any(not x.empty for x in v)
-           else (v[0] if v else pd.DataFrame()) for k, v in parts.items()}
-    for k in ("rounds", "games", "calls", "chat", "gate", "scratch_events", "outputs", "candidates", "exclusions"):
-        out.setdefault(k, pd.DataFrame())
-    if out["candidates"].empty:
-        out["candidates"] = pd.DataFrame(columns=coding.INTERNAL_COLUMNS)
+        dirs.append(str(d))
+    try:
+        loaded = game_set.load_tables(dirs, cohort=ctx.cfg.cohort, strict=ctx.confirmatory,
+                                      warn=lambda m: ctx.warn(f"game set (D12): {m}"))
+    except game_set.GameSetError as exc:
+        raise AnalysisError(f"duplicate-completion rule (D12) cannot be applied: {exc}") from exc
+    out = loaded.tables
+    ctx.selection = loaded.game_set
+    out["calls_other"] = loaded.other_calls
+    out["duplicates"] = loaded.game_set.duplicates_frame()
     g = out["games"]
     if not g.empty:
-        g["host"] = [hosts.get((str(lg), gid)) or "unknown" for lg, gid in zip(g["log"], g["game_id"])]
-        g["log_status"] = [statuses.get((str(lg), gid)) for lg, gid in zip(g["log"], g["game_id"])]
-        if (g["log_status"] != "success").any():
-            ctx.warn(f"{int((g['log_status'] != 'success').sum())} complete games come from logs not yet marked "
-                     "success (preliminary/audited admission)")
-    _dedupe(ctx, out)
+        g["host"] = [loaded.hosts.get((str(lg), gid)) or "unknown" for lg, gid in zip(g["log"], g["game_id"])]
+        g["log_status"] = [loaded.statuses.get((str(lg), gid)) for lg, gid in zip(g["log"], g["game_id"])]
+        if g["game_id"].duplicated().any():         # load_tables keeps one copy per game; never silently twice
+            raise AnalysisError(f"game IDs twice in the analysis table: {sorted(set(g.loc[g['game_id'].duplicated(), 'game_id']))[:4]}")
+        n_ns = int((g["log_status"] != "success").sum())
+        if n_ns:
+            ctx.warn(f"{n_ns} complete games come from logs not marked success (stopped launches or live logs; "
+                     "admitted per sample, DEVIATIONS D12)")
+    n_dup = loaded.game_set.n_duplicates_dropped
+    if n_dup:
+        ctx.warn(f"{n_dup} duplicate completions dropped (D12: the copy that finished first is kept; "
+                 "tables/duplicates)")
     return out
-
-
-def _dedupe(ctx: Ctx, t: dict[str, pd.DataFrame]) -> None:
-    g = t["games"]
-    if g.empty:
-        return
-    dup = g["game_id"].duplicated(keep="first")
-    if dup.any():
-        ids = sorted(set(g.loc[dup, "game_id"]))
-        if ctx.confirmatory:
-            raise AnalysisError(f"{len(ids)} game IDs complete in more than one log: {ids[:4]}")
-        ctx.warn(f"{len(ids)} duplicated complete games kept once (first log): {ids[:4]}")
-        t["games"] = g[~dup].reset_index(drop=True)
-        keys = {"rounds": ["game_id", "t", "firm"], "candidates": ["candidate_id"],
-                "calls": ["game_id", "t", "firm", "step"], "chat": ["game_id", "t", "firm"],
-                "gate": ["game_id", "t", "firm", "phase", "cmd"], "scratch_events": ["game_id", "t", "firm", "path", "op"],
-                "outputs": ["game_id", "firm", "t", "phase", "cmd"]}
-        for k, cols in keys.items():
-            df = t[k]
-            if not df.empty and set(cols) <= set(df.columns):
-                t[k] = df.drop_duplicates(cols, keep="first").reset_index(drop=True)
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -280,11 +248,13 @@ def coverage(ctx: Ctx, t: dict[str, pd.DataFrame]) -> pd.DataFrame:
     complete = set(games["game_id"]) if not games.empty else set()
     ex = excl.copy()
     if not ex.empty:
+        sel = ex["selection"].astype(str) if "selection" in ex.columns else pd.Series("", index=ex.index)
         ex["class"] = "other"
-        ex.loc[ex["reason"].str.startswith("outside requested cohort"), "class"] = "outside cohort (never included)"
-        ex.loc[ex["reason"].str.startswith(PREREG_EXCLUSION_PREFIXES), "class"] = "prereg exclusion"
-        ex.loc[ex["game_id"].isin(complete) & (ex["class"] != "outside cohort (never included)"),
-               "class"] = "superseded by complete rerun"
+        ex.loc[ex["reason"].astype(str).str.startswith(PREREG_EXCLUSION_PREFIXES), "class"] = "prereg exclusion"
+        ex.loc[ex["game_id"].isin(complete) | (sel == game_set.SUPERSEDED), "class"] = SUPERSEDED_CLASS
+        ex.loc[sel == game_set.DUPLICATE, "class"] = DUPLICATE_CLASS
+        ex.loc[sel == game_set.LOG_COPY, "class"] = LOG_COPY_CLASS
+        ex.loc[ex["reason"].astype(str).str.startswith("outside requested cohort"), "class"] = OUTSIDE_CLASS
     if design is None:
         if ctx.confirmatory and ctx.cfg.cohort == "confirmatory":
             raise AnalysisError("confirmatory mode needs the frozen design (--full-design and/or --manifest)")
@@ -299,12 +269,11 @@ def coverage(ctx: Ctx, t: dict[str, pd.DataFrame]) -> pd.DataFrame:
         if ctx.confirmatory:
             raise AnalysisError(f"{len(extra)} complete games are not in the frozen manifests: {sorted(extra)[:4]}")
         ctx.warn(f"{len(extra)} complete games outside the manifests dropped: {sorted(extra)[:4]}")
-        for k in t:
-            if "game_id" in t[k].columns and k != "exclusions":
+        for k in t:     # the D12 record (duplicates) and the other billed calls stay whole for the reconciliation
+            if "game_id" in t[k].columns and k not in ("exclusions", "duplicates", "calls_other"):
                 t[k] = t[k][~t[k]["game_id"].isin(extra)].reset_index(drop=True)
         complete -= extra
-    live_ex = ex[(~ex["class"].isin(["outside cohort (never included)", "superseded by complete rerun"]))] \
-        if not ex.empty else ex
+    live_ex = ex[~ex["class"].isin(NOT_EXCLUSION_CLASSES)] if not ex.empty else ex
     prereg_ids = set(live_ex.loc[live_ex["class"] == "prereg exclusion", "game_id"]) if not live_ex.empty else set()
     other = live_ex[live_ex["class"] == "other"] if not live_ex.empty else live_ex
     trimmed = set(ctx.cfg.trimmed)
@@ -990,7 +959,7 @@ def s6_monitors(ctx: Ctx, games: pd.DataFrame, *, log_status: Mapping[str, Any] 
     monitor_scores.csv next to it must be exactly those games; on a mismatch (or, confirmatory, IDs that cannot be
     checked) a confirmatory run holds S6 'pending' and a preliminary run copies the keys with a warning (S6.sync.*).
     Confirmatory runs also hold the judges 'pending' while any selected judge call was not run (S6.judge.not_run).
-    `log_status` (game_id -> final eval status) only explains a mismatch: monitors.py admits success logs only.
+    `log_status` (game_id -> final eval status) only explains a mismatch (a monitors run on other log directories).
     """
     res = ctx.res
     src = S6Source()
@@ -1040,7 +1009,8 @@ def s6_monitors(ctx: Ctx, games: pd.DataFrame, *, log_status: Mapping[str, Any] 
                    if (log_status or {}).get(g, "success") != "success"]
             if odd:
                 msg += (f"; {len(odd)} of this run's evaluation-set games come from logs not marked success "
-                        f"(--accept-log-status or a live log), which analysis/monitors.py does not admit")
+                        f"(a stopped launch or a live log): run analysis/monitors.py on the same log directories "
+                        f"(it applies the same D12 game set, analysis/game_set.py)")
             if ctx.confirmatory:
                 raw, src.reason = None, msg + " (confirmatory: S6 held pending; re-run analysis/monitors.py)"
             else:
@@ -1660,52 +1630,97 @@ def _git(*args: str) -> str | None:
         return None
 
 
+CALL_SETS = ("kept", game_set.DUPLICATE, game_set.SUPERSEDED, "excluded")
+LEDGER_KEYS = ("meta.ledger_reconciled", "meta.reconciled_cost_usd", "meta.cost_kept_games_usd", "meta.cost_all_usd",
+               "meta.cost_dropped_duplicates_usd", "meta.cost_superseded_usd", "meta.cost_excluded_usd",
+               "meta.ledger_settled_usd", "meta.ledger_unmatched_settled_usd", "meta.ledger_open_retired_n",
+               "meta.ledger_open_retired_usd", "meta.ledger_open_live_n", "meta.ledger_open_live_usd",
+               "meta.ledger_flags", "meta.ledger_flags_accepted", "meta.ledger_flagged_attempts_admitted",
+               "meta.ledger_n_files", "meta.ledger_n_retired")
+
+
 def reconcile(ctx: Ctx, t: dict[str, pd.DataFrame]) -> None:
+    """Every saved provider attempt against the union of the ledgers (confirmatory.reconcile_game_set).
+
+    The calls of the analysed games (t['calls']) and, apart, those of dropped duplicates, superseded and excluded
+    samples (t['calls_other']; billed, never analysed) must each match a ledger closure; the analysed games' cost
+    totals must equal their attempt sum. Open reservations are never spend: on --retired-ledger files (stopped
+    launches) they are reported as meta.ledger_open_retired_*, on any other ledger they mean a live or crashed runner
+    and fail a confirmatory run. Flags: see confirmatory.ACCEPTED_FLAG_PREFIXES (--accept-flagged-ledger, D8).
+    """
     res = ctx.res
-    if not ctx.cfg.ledgers:
+    cfg = ctx.cfg
+    if not cfg.ledgers and not cfg.retired_ledgers:
         if ctx.confirmatory:
             raise AnalysisError("confirmatory mode needs every host's ledger (--ledger) for reconciliation")
-        res["meta.ledger_reconciled"] = PENDING
+        for k in LEDGER_KEYS:
+            res[k] = PENDING
         return
-    work = Path(ctx.cfg.out) / "_work"
-    work.mkdir(parents=True, exist_ok=True)
-    merged = work / "ledger_merged.jsonl"
-    flagged = 0
-    with merged.open("w", encoding="utf-8") as out:
-        for p in ctx.cfg.ledgers:
-            for line in Path(p).read_text(encoding="utf-8").splitlines():
-                if not line.strip():
-                    continue
-                ev = json.loads(line)
-                if ev.get("event") == "flag":
-                    flagged += 1
-                    if ctx.cfg.accept_flagged_ledger:
-                        continue
-                out.write(line + "\n")
-    res["meta.ledger_flags"] = flagged
-    res["meta.ledger_flags_accepted"] = bool(ctx.cfg.accept_flagged_ledger)
+    paths, retired = list(cfg.ledgers), list(cfg.retired_ledgers)
+    missing = [p for p in [*paths, *retired] if not Path(p).exists()]
+    if missing:
+        if ctx.confirmatory:
+            raise AnalysisError(f"ledger missing: {missing[:3]}")
+        ctx.warn(f"ledgers missing (preliminary; skipped): {missing[:3]}")
+        paths, retired = [p for p in paths if p not in missing], [p for p in retired if p not in missing]
+    other = t.get("calls_other", pd.DataFrame())
+    sets = {"kept": t["calls"]}
+    for s in CALL_SETS[1:]:
+        sets[s] = other[other["selection"] == s] if not other.empty and "selection" in other.columns \
+            else pd.DataFrame()
     try:
-        total = confirmatory.reconcile_call_costs(t["calls"], merged)
-        logged = sum(Decimal(str(x)) for x in t["games"]["cost_usd"])
-        if abs(total - logged) > Decimal("0.00000001"):
-            raise ValueError("game cost totals do not reconcile to provider attempts")
-        res["meta.ledger_reconciled"] = True
-        res["meta.reconciled_cost_usd"] = float(total)
+        rec = confirmatory.reconcile_game_set(sets, paths, retired=retired, accept_flags=cfg.accept_flagged_ledger)
     except (ValueError, KeyError, OSError) as exc:
         if ctx.confirmatory:
             raise AnalysisError(f"ledger reconciliation failed: {exc}") from exc
         res["meta.ledger_reconciled"] = False
         ctx.warn(f"ledger reconciliation failed (preliminary): {exc}")
-    finally:
-        merged.unlink(missing_ok=True)
-    ledger_total = Decimal("0")
-    for p in ctx.cfg.ledgers:
-        for line in Path(p).read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                ev = json.loads(line)
-                if ev.get("event") == "settle" and ev.get("actual") is not None:
-                    ledger_total += Decimal(str(ev["actual"]))
-    res["meta.ledger_settled_usd"] = float(ledger_total)
+        try:
+            book = confirmatory.read_ledgers(paths, retired=retired)
+        except (ValueError, KeyError, OSError):
+            return
+        rec = None
+    else:
+        book = rec.book
+    res["meta.ledger_n_files"], res["meta.ledger_n_retired"] = len(book.paths), len(book.retired)
+    if book.copies:
+        ctx.warn(f"ledger copies with the same ledger ID read once (the longer file): "
+                 f"{[(_rel(Path(a)), _rel(Path(b))) for a, b in sorted(book.copies.items())][:3]}")
+    res["meta.ledger_flags"] = book.n_flags
+    res["meta.ledger_flags_accepted"] = bool(cfg.accept_flagged_ledger)
+    for reason, n in sorted(book.flag_reasons.items()):
+        res[f"meta.ledger_flags.{re.sub(r'[^A-Za-z0-9]+', '_', reason)}"] = n
+    res["meta.ledger_settled_usd"] = float(book.settled_usd)
+    opened = book.open_summary()
+    res["meta.ledger_open_retired_n"], res["meta.ledger_open_retired_usd"] = opened["retired"][0], float(opened["retired"][1])
+    res["meta.ledger_open_live_n"], res["meta.ledger_open_live_usd"] = opened["live"][0], float(opened["live"][1])
+    if opened["live"][0]:
+        live = sorted({_rel(Path(p)) for _, p in book.open_reservations().values() if p not in book.retired})
+        msg = (f"{opened['live'][0]} open reservations (${float(opened['live'][1]):.4f} reserved) on ledgers not "
+               f"declared retired: {live[:4]} (a runner still live or crashed; a stopped launch's ledger goes under "
+               "--retired-ledger)")
+        if ctx.confirmatory:
+            raise AnalysisError(msg)
+        ctx.warn(msg + " (preliminary)")
+    if rec is None:
+        return
+    kept = rec.usd["kept"]
+    logged = sum(Decimal(str(x)) for x in t["games"]["cost_usd"]) if not t["games"].empty else Decimal("0")
+    if abs(kept - logged) > confirmatory.TOL:
+        msg = f"game cost totals ({float(logged)}) do not reconcile to provider attempts ({float(kept)})"
+        if ctx.confirmatory:
+            raise AnalysisError(f"ledger reconciliation failed: {msg}")
+        res["meta.ledger_reconciled"] = False
+        ctx.warn(f"ledger reconciliation failed (preliminary): {msg}")
+        return
+    res["meta.ledger_reconciled"] = True
+    res["meta.reconciled_cost_usd"] = res["meta.cost_kept_games_usd"] = float(kept)
+    res["meta.cost_dropped_duplicates_usd"] = float(rec.usd[game_set.DUPLICATE])
+    res["meta.cost_superseded_usd"] = float(rec.usd[game_set.SUPERSEDED])
+    res["meta.cost_excluded_usd"] = float(rec.usd["excluded"])
+    res["meta.cost_all_usd"] = float(rec.all_usd)
+    res["meta.ledger_unmatched_settled_usd"] = float(book.settled_usd - rec.all_usd)
+    res["meta.ledger_flagged_attempts_admitted"] = rec.flagged_admitted
 
 
 def run(cfg: Config) -> dict[str, Any]:
@@ -1730,13 +1745,20 @@ def run(cfg: Config) -> dict[str, Any]:
     res["meta.n_complete"] = int(len(games))
     res["meta.n_excluded"] = int((cov["status"] == "excluded").sum()) if not cov.empty else 0
     ex_ids = set(cov.loc[cov["status"] == "excluded", "game_id"]) if not cov.empty else set()
-    ex_live = excl[excl["game_id"].isin(ex_ids)].drop_duplicates("game_id") if not excl.empty and ex_ids else excl.iloc[:0]
+    ex_live = excl[excl["game_id"].isin(ex_ids) & (excl["class"] == "prereg exclusion")].drop_duplicates("game_id") \
+        if not excl.empty and ex_ids else excl.iloc[:0]
     res["meta.n_excluded_harness_error"] = int(ex_live["reason"].str.startswith("sample error").sum()) if len(ex_live) else 0
     res["meta.n_excluded_parse"] = int(ex_live["reason"].str.startswith("parse-failure rate above").sum()) \
         if len(ex_live) else 0
     res["meta.trimmed_declared"] = ("none" if not cfg.trimmed else ", ".join(cfg.trimmed) if len(cfg.trimmed) <= 12
                                     else f"{len(cfg.trimmed)} entries (scenarios/arms/grids/models/game IDs)")
-    res["meta.accepted_log_status"] = ", ".join(cfg.accept_log_status) if cfg.accept_log_status else "none"
+    res["meta.accepted_log_status"] = "any (D12: complete samples are admitted whatever their log's status)"
+    gs = ctx.selection
+    res["meta.n_duplicates_dropped"] = gs.n_duplicates_dropped if gs is not None else 0
+    res["meta.n_superseded"] = len(gs.superseded) if gs is not None else 0
+    res["meta.n_complete_samples"] = gs.n_complete_samples if gs is not None else 0
+    lst = t["games"].get("log_status") if not t["games"].empty else None
+    res["meta.n_complete_from_unfinished_logs"] = int((lst != "success").sum()) if lst is not None else 0
     res["meta.n_trimmed"] = int((cov["status"] == "trimmed").sum()) if not cov.empty else 0
     res["meta.n_pending"] = int(cov["status"].isin(["pending", "incomplete"]).sum()) if not cov.empty else 0
     res["meta.coverage"] = (res["meta.n_complete"] / res["meta.n_games"]) if res["meta.n_games"] else 0.0
@@ -1783,15 +1805,33 @@ def run(cfg: Config) -> dict[str, Any]:
     tabs["s3_variants"] = s3_table(ctx, games) if not games.empty else pd.DataFrame()
     tabs["g_scenarios"] = g_tab
     tabs["costs"] = costs_table(games)
-    tabs["exclusions"] = excl[[c for c in ("game_id", "grid", "model", "scenario", "arm", "seed", "class", "reason")
-                               if c in excl.columns]] if not excl.empty else pd.DataFrame()
+    ex_tab = excl.assign(log=excl["log"].astype(str).map(game_set.short_log)) \
+        if not excl.empty and "log" in excl.columns else excl
+    tabs["exclusions"] = ex_tab[[c for c in ("game_id", "grid", "model", "scenario", "arm", "seed", "class", "reason",
+                                             "log") if c in ex_tab.columns]] if not ex_tab.empty else pd.DataFrame()
+    tabs["duplicates"] = t.get("duplicates", pd.DataFrame())
     tabs["coverage"] = coverage_table(cov)
     for name, df in tabs.items():
-        (out / "tables" / f"{name}.md").write_text(md_table(df), encoding="utf-8")
+        text = md_table(df)
+        if name == "duplicates":    # a finished, empty table is a result, not missing data
+            text = (text if df is not None and not df.empty else "No game was completed more than once.\n") + \
+                ("\nDEVIATIONS D12: of a game completed more than once, the copy that finished first is kept "
+                 "(ties: earlier log start, then log path); the others are dropped (never analysed) and their calls "
+                 "are still reconciled against the ledgers.\n")
+        (out / "tables" / f"{name}.md").write_text(text, encoding="utf-8")
         if df is not None and not df.empty:
             df.to_csv(out / "tables" / f"{name}.csv", index=False)
     write_s6_tables(ctx, s6)              # monitors_headline (Table 3) and the monitors tool's own table
     games.to_csv(out / "games.csv", index=False)
+    # --- BEGIN X.nonstorage hook: EXPLORATORY (post hoc, not pre-registered); all logic in analysis/nonstorage.py ---
+    try:                                   # an exploratory scan must never stop or change the pre-registered outputs
+        from analysis import nonstorage    # scans the analysed games' commands; writes tables/nonstorage_attempts.*
+        ns_keys = nonstorage.write_outputs(t, out / "tables", warn=ctx.warn)
+        res.update({k: v for k, v in ns_keys.items() if str(k).startswith("X.nonstorage.")})
+    except Exception as exc:               # noqa: BLE001 - any failure leaves the X.nonstorage placeholders unresolved
+        ctx.warn(f"X.nonstorage: exploratory scan skipped ({type(exc).__name__}: {str(exc)[:160]})")
+        res["X.nonstorage.status"] = f"insufficient data: scan failed ({type(exc).__name__})"
+    # --- END X.nonstorage hook ---
     res["figures"] = ", ".join(figures(ctx, games, g_tab)) if cfg.figures else NA
     # Missing keys become 'pending', which tools/fill_report.py --confirmatory refuses to render as a result.
     res["meta.contract_missing"] = len(ensure_contract(ctx))
@@ -1817,7 +1857,11 @@ def summary(res: dict, tabs: dict[str, pd.DataFrame]) -> str:
              f"- Hosts: {res.get('meta.hosts')}. Freeze commit {res.get('meta.freeze_commit')}; analysis commit "
              f"{res.get('meta.analysis_commit')} (dirty: {f('meta.analysis_dirty')}).",
              f"- Subject parse-failure rate {f('meta.parse_failure_rate')}; cost of complete games "
-             f"${f('meta.total_cost_usd')}; ledger reconciled: {f('meta.ledger_reconciled')}.",
+             f"${f('meta.total_cost_usd')}; ledger reconciled: {f('meta.ledger_reconciled')} (all saved calls "
+             f"${f('meta.cost_all_usd')}; open reservations on retired ledgers {f('meta.ledger_open_retired_n')}, "
+             f"never spend).",
+             f"- Duplicate completions dropped (D12, first finished kept): {f('meta.n_duplicates_dropped')}; "
+             f"superseded samples {f('meta.n_superseded')}.",
              f"- Communication labels: {res.get('L2.status')}.", "",
              "## Primary family (Holm across P1-P3)",
              f"- P1 addressed-write interaction: {ci('P1.l2')}; Holm p {f('P1.l2.p_holm')}. "
@@ -1849,6 +1893,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--coding-summary", help="analysis/llm_coder.py summary.json (coding.* keys; 'pending' without)")
     ap.add_argument("--coding-agreement", help="analysis/llm_coder.py hand-check agreement.json (coding.handcheck.*)")
     ap.add_argument("--ledger", action="append", default=[], help="append-only ledger; repeat per host")
+    ap.add_argument("--retired-ledger", action="append", default=[],
+                    help="ledger of a stopped launch (D6/D10/D11), reconciled like --ledger; its open reservations "
+                         "are reported (meta.ledger_open_retired_*), never spend; repeat per ledger")
     ap.add_argument("--out", default=str(ROOT / "runs" / "analysis"))
     ap.add_argument("--preliminary", action="store_true")
     ap.add_argument("--cohort", choices=("confirmatory", "pilot"), default="confirmatory",
@@ -1856,9 +1903,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--trimmed", default="",
                     help="comma list of scenario IDs/arms/grids/models/game IDs trimmed per prereg §6; an entry "
                          "@FILE reads one game ID per line (partial steps, e.g. 'Opus moves to the broad cells')")
-    ap.add_argument("--accept-log-status", default="", help="audited: comma list of final eval statuses to admit")
+    ap.add_argument("--accept-log-status", default="",
+                    help="no effect since DEVIATIONS D12: complete samples are admitted whatever their log's status")
     ap.add_argument("--accept-flagged-ledger", action="store_true",
-                    help="audited: accept transport-error ledger flags settled conservatively (DEVIATIONS D1/D2)")
+                    help="audited (DEVIATIONS D8): admit saved attempts whose ledger flag is a settlement at the full "
+                         "reservation because the provider returned no cost (transport_error:*, missing_cost:*); "
+                         "over_est_max and other flags still fail")
     ap.add_argument("--pilot-beta-sd", type=float)
     ap.add_argument("--n-boot", type=int, default=2000)
     ap.add_argument("--n-perm", type=int, default=10000)
@@ -1875,7 +1925,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     a.trimmed = ",".join(trimmed)
     cfg = Config(log_dirs=a.logs, manifests=a.manifest, labels=a.labels,
                  monitor_results=a.monitor_results or str(Path(a.out) / "monitor_results.json"),
-                 coding_summary=a.coding_summary, coding_agreement=a.coding_agreement, ledgers=a.ledger, out=a.out,
+                 coding_summary=a.coding_summary, coding_agreement=a.coding_agreement, ledgers=a.ledger,
+                 retired_ledgers=a.retired_ledger, out=a.out,
                  preliminary=a.preliminary, cohort=a.cohort, full_design=a.full_design,
                  trimmed=tuple(x for x in a.trimmed.split(",") if x),
                  accept_log_status=tuple(x for x in a.accept_log_status.split(",") if x),

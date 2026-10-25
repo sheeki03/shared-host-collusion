@@ -109,3 +109,93 @@ def test_retry_attempts_reconcile_to_ledger(tmp_path):
         fh.write(json.dumps(dict(event="flag", id="r1", reason="over_est_max")) + "\n")
     with pytest.raises(ValueError, match="flagged paid attempt"):
         confirmatory.reconcile_call_costs(calls, ledger)
+
+
+# ---------------------------------------------------------------------------------------------------- ledger union
+def _ledger(path, lid, events):
+    lines = ([dict(event="init", id=lid, cap="10")] if lid else []) + events
+    path.write_text("".join(json.dumps(e) + "\n" for e in lines))
+    return path
+
+
+def _calls(*rids, cost=0.01):
+    return pd.DataFrame([dict(total_cost_usd=cost, attempts=[dict(reservation_id=r, settled_usd=cost)]) for r in rids])
+
+
+def test_ledger_union_open_reservations_flags_and_call_sets(tmp_path):
+    def rs(rid, est=0.5):
+        return [dict(event="reserve", id=rid, est_max=est), dict(event="settle", id=rid, actual=0.01)]
+    old = _ledger(tmp_path / "old.jsonl", "L-old", rs("a1") + rs("d1") + [
+        dict(event="flag", id="a1", reason="transport_error:ReadError"),
+        dict(event="reserve", id="open-1", est_max=0.4), dict(event="reserve", id="open-2", est_max=0.1)])
+    new = _ledger(tmp_path / "new.jsonl", "L-new", rs("a2") + rs("s1") + [
+        dict(event="flag", id="s1", reason="missing_cost:http_503"), dict(event="reserve", id="live-1", est_max=0.2)])
+    sets = {"kept": _calls("a1", "a2"), "duplicate": _calls("d1"), "superseded": _calls("s1"), "excluded": _calls()}
+    rec = confirmatory.reconcile_game_set(sets, [new], retired=[old], accept_flags=True)
+    assert float(rec.usd["kept"]) == pytest.approx(.02) and float(rec.all_usd) == pytest.approx(.04)
+    assert rec.n_calls == {"kept": 2, "duplicate": 1, "superseded": 1, "excluded": 0} and rec.flagged_admitted == 2
+    opened = rec.book.open_summary()
+    assert opened["retired"][0] == 2 and float(opened["retired"][1]) == pytest.approx(.5)     # never spend
+    assert opened["live"][0] == 1 and float(rec.book.settled_usd) == pytest.approx(.04)
+    assert dict(rec.book.flag_reasons) == {"transport_error": 1, "missing_cost": 1}
+    with pytest.raises(ValueError, match="flagged paid attempt a1"):          # D8 flags need the audited switch
+        confirmatory.reconcile_game_set(sets, [new], retired=[old])
+    # the same reservation saved in two call sets (a copy of a game counted twice) fails closed
+    with pytest.raises(ValueError, match="duplicate reservation ID"):
+        confirmatory.reconcile_game_set({**sets, "duplicate": _calls("a2")}, [new], retired=[old], accept_flags=True)
+    # a dropped duplicate's billed call without a ledger closure fails too
+    with pytest.raises(ValueError, match="no ledger closure for saved reservation d9"):
+        confirmatory.reconcile_game_set({**sets, "duplicate": _calls("d9")}, [new], retired=[old], accept_flags=True)
+    # a breach is never admitted
+    _ledger(tmp_path / "new.jsonl", "L-new", rs("a2") + rs("s1") + [dict(event="flag", id="a2", reason="over_est_max")])
+    with pytest.raises(ValueError, match="over_est_max"):
+        confirmatory.reconcile_game_set(sets, [new], retired=[old], accept_flags=True)
+    with pytest.raises(ValueError, match="no model calls"):
+        confirmatory.reconcile_game_set({"kept": pd.DataFrame()}, [new])
+
+
+def test_ledger_copies_reservations_and_torn_lines(tmp_path):
+    ev = [dict(event="reserve", id="r1", est_max=0.5), dict(event="settle", id="r1", actual=0.01),
+          dict(event="reserve", id="r2", est_max=0.5), dict(event="settle", id="r2", actual=0.02)]
+    (tmp_path / "a").mkdir()
+    full = _ledger(tmp_path / "a" / "l.jsonl", "L1", ev)
+    short = _ledger(tmp_path / "short.jsonl", "L1", ev[:2])          # an older synced copy of the same ledger
+    book = confirmatory.read_ledgers([short, full], retired=[short])
+    assert book.paths == [str(full.resolve())] and book.copies == {str(short.resolve()): str(full.resolve())}
+    assert book.retired == {str(full.resolve())} and float(book.settled_usd) == pytest.approx(.03)
+    _ledger(tmp_path / "fork.jsonl", "L1", ev[:2] + [dict(event="release", id="r2")])
+    with pytest.raises(ValueError, match="neither extends the other"):
+        confirmatory.read_ledgers([full, tmp_path / "fork.jsonl"])
+    _ledger(tmp_path / "other.jsonl", "L2", ev[:1])
+    with pytest.raises(ValueError, match="appears in two ledgers"):
+        confirmatory.read_ledgers([full, tmp_path / "other.jsonl"])
+    # a line torn by a writer that died is closed off by a torn_line flag at its offset; an unterminated last line
+    # (a sync in progress) is not yet an event; any other malformed line fails closed
+    head = json.dumps(dict(event="init", id="L3", cap="1")) + "\n"
+    torn = '{"event": "sett'
+    body = head + torn + "\n" + json.dumps(dict(event="flag", id=None, reason="torn_line", offset=len(head))) + "\n"
+    (tmp_path / "torn.jsonl").write_text(body + '{"event": "reser')
+    assert confirmatory.read_ledgers([tmp_path / "torn.jsonl"]).n_flags == 1
+    (tmp_path / "bad.jsonl").write_text(head + torn + "\n" + json.dumps(dict(event="flag", reason="x")) + "\n")
+    with pytest.raises(ValueError, match="torn_line"):
+        confirmatory.read_ledgers([tmp_path / "bad.jsonl"])
+
+
+def test_ledger_copy_chain_keeps_the_longest_and_its_retired_status(tmp_path):
+    """Three syncs of one ledger: the longest is used, every shorter one maps to it, and declaring any copy retired
+    (here the shortest) retires the ledger, so its open reservations are never read as a live runner."""
+    ev = [dict(event="reserve", id="r1", est_max=0.5), dict(event="settle", id="r1", actual=0.01),
+          dict(event="reserve", id="r2", est_max=0.5), dict(event="settle", id="r2", actual=0.02),
+          dict(event="reserve", id="open-1", est_max=0.3)]
+    for d in ("a", "b", "c"):
+        (tmp_path / d).mkdir()
+    s1 = _ledger(tmp_path / "a" / "l.jsonl", "L1", ev[:2])
+    s2 = _ledger(tmp_path / "b" / "l.jsonl", "L1", ev[:4])
+    s3 = _ledger(tmp_path / "c" / "l.jsonl", "L1", ev)
+    book = confirmatory.read_ledgers([s2, s3], retired=[s1])
+    used = str(s3.resolve())
+    assert book.paths == [used] and book.copies == {str(s1.resolve()): used, str(s2.resolve()): used}
+    assert book.retired == {used} and book.open_summary()["retired"][0] == 1 and book.open_summary()["live"][0] == 0
+    _ledger(tmp_path / "b" / "l.jsonl", "L1", ev[:2] + [dict(event="release", id="r2")])     # a fork in the chain
+    with pytest.raises(ValueError, match="neither extends the other"):
+        confirmatory.read_ledgers([s1, s2, s3])

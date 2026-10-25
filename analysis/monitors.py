@@ -40,8 +40,10 @@ Outputs (`write_outputs`)
 - tables/monitors.md: the S6 table.
 
 Usage
-  .venv/bin/python -m analysis.monitors --logs runs/full/logs-mac runs/full/logs-vps1 runs/full/logs-vps2 \
-      --out runs/analysis [--judge-budget 10] [--run-judges] [--max-workers 4] [--allow-partial]
+  .venv/bin/python -m analysis.monitors --logs runs/full/logs-* runs/remote/*/logs-* \
+      --out runs/analysis [--judge-budget 10] [--run-judges] [--max-workers 4]
+The game set is analysis/game_set.py's (DEVIATIONS D12), the same as analysis/report_outputs.py's: complete samples
+from logs of any status, the first-finished copy of a game completed more than once (S6.n_duplicates_dropped).
 --run-judges spends money and needs SHC_LEDGER_PATH / SHC_BUDGET_CAP_USD (a dedicated ledger). Without it the judge
 sample and its estimated cost are written, and earlier cached verdicts are reused.
 """
@@ -62,7 +64,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from analysis import dataset, stats
+from analysis import game_set, stats
 
 ROOT = Path(__file__).resolve().parent.parent
 MONITORS = ("tirith_stock", "tirith_path", "tirith_path_hardened", "llm_per_firm", "llm_joint", "active_beta")
@@ -137,38 +139,64 @@ Reply with one JSON object and nothing else, with one entry per agent:
 GAME_KEYS = ("game_id", "grid", "model_label", "model_id", "effort", "scenario_id", "engine", "arm", "seed", "rounds")
 
 
-def load_games(log_dirs: Sequence[str | Path], *, cohort: str = "confirmatory", allow_partial: bool = False
-               ) -> tuple[list[dict], list[dict]]:
-    """Complete games of the cohort as {meta, rows, outputs, gate} plus an exclusions list.
+LEFT_OUT_SELECTIONS = (game_set.DUPLICATE, game_set.SUPERSEDED, game_set.LOG_COPY)   # not exclusions of a game
 
-    Uses the dataset module's cohort gate and completeness rule. `allow_partial` admits complete samples from a log
-    that is still running (status "started"), for a preliminary run only.
+
+def load_games(log_dirs: Sequence[str | Path], *, cohort: str = "confirmatory", allow_partial: bool = False,
+               strict: bool = False, notes: list[str] | None = None) -> tuple[list[dict], list[dict]]:
+    """Complete games of the cohort as {meta, rows, outputs, gate} plus a list of the samples left out.
+
+    The game set is analysis/game_set.py's, the one analysis/report_outputs.py uses (DEVIATIONS D12): complete samples
+    are admitted whatever their log's final status, a game completed more than once keeps the copy that finished
+    first, and errored samples of a game completed elsewhere are superseded. Each left-out entry has a `selection`
+    (duplicate, superseded, log copy, or the rule's status of an excluded sample) and a `reason`; only entries whose
+    selection is not in LEFT_OUT_SELECTIONS are excluded games. The completeness rule is dataset._sample_problem, plus
+    "no command outputs". `allow_partial` is kept for old command lines and has no effect (D12 admits complete samples
+    of a live log too). `strict` fails on the cases game_set.select reports; `notes` collects them otherwise.
     """
     from inspect_ai.log import list_eval_logs, read_eval_log
 
-    games, excluded, seen = [], [], set()
+    refs: list = []
+    found: list[tuple[str, dict, dict, str | None]] = []       # (log, base, result, problem) in reading order
     for d in log_dirs:
-        for info in list_eval_logs(str(d)):
-            log = read_eval_log(info)
+        for info in sorted(list_eval_logs(str(d)), key=lambda i: str(i.name)):
+            log = game_set.read_log(read_eval_log, info)
             for s in log.samples or []:
-                meta = s.metadata or {}
-                res = meta.get("result") or {}
-                base = {k: meta.get(k) for k in GAME_KEYS}
-                if not dataset._cohort_match(base, cohort):
+                ref = game_set.sample_ref(log, info.name, s, cohort=cohort)
+                if ref is None:
                     continue
-                problem = dataset._sample_problem(base, res.get("rows", []), s.error.message[:300] if s.error else None)
-                if problem is None and log.status != "success" and not (allow_partial and log.status == "started"):
-                    problem = f"evaluation status {log.status}"
+                refs.append(ref)
+                base, res, problem = game_set.sample_problem(s)
+                base = {k: base.get(k) for k in GAME_KEYS}
                 if problem is None and not isinstance(res.get("outputs"), dict):
                     problem = "no command outputs"
-                if problem is None and base["game_id"] in seen:
-                    problem = "duplicate game_id"
-                if problem is not None:
-                    excluded.append({**base, "log": info.name, "reason": problem})
-                    continue
-                seen.add(base["game_id"])
-                games.append({"meta": base, "rows": res["rows"], "outputs": res["outputs"], "gate": res.get("gate", [])})
+                found.append((str(info.name), base, res, problem))
+    gs = game_set.select(refs, strict=strict)
+    if notes is not None:
+        notes.extend(gs.notes)
+    games, excluded, seen = [], [], set()
+    for name, base, res, problem in found:
+        st = gs.status(name, base["game_id"])
+        if st in LEFT_OUT_SELECTIONS:
+            excluded.append({**base, "log": name, "selection": st, "reason": gs.reason(name, base["game_id"])})
+            continue
+        if problem is None and base["game_id"] in seen:
+            problem = "duplicate game_id"              # never reached: game_set keeps one copy per game
+        if problem is not None:
+            excluded.append({**base, "log": name, "selection": st, "reason": problem})
+            continue
+        seen.add(base["game_id"])
+        games.append({"meta": base, "rows": res["rows"], "outputs": res["outputs"], "gate": res.get("gate", []),
+                      "log": name})
     return games, excluded
+
+
+def count_left_out(excluded: Sequence[Mapping]) -> dict[str, int]:
+    """S6.n_excluded (cohort games left out: incomplete, no command outputs), S6.n_duplicates_dropped, S6.n_superseded."""
+    sel = [e.get("selection") for e in excluded]
+    return {"S6.n_excluded": len({e.get("game_id") for e, s in zip(excluded, sel) if s not in LEFT_OUT_SELECTIONS}),
+            "S6.n_duplicates_dropped": sum(1 for s in sel if s == game_set.DUPLICATE),
+            "S6.n_superseded": sum(1 for s in sel if s == game_set.SUPERSEDED)}
 
 
 def _arm_info(arm: str) -> dict:
@@ -1090,7 +1118,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     ap.add_argument("--logs", nargs="+", required=True)
     ap.add_argument("--out", default=str(ROOT / "runs" / "analysis"))
     ap.add_argument("--cohort", choices=["confirmatory", "pilot", "all"], default="confirmatory")
-    ap.add_argument("--allow-partial", action="store_true", help="admit complete samples from logs still running")
+    ap.add_argument("--allow-partial", action="store_true",
+                    help="no effect since DEVIATIONS D12: complete samples are admitted whatever their log's status")
     ap.add_argument("--judge-budget", type=float, default=10.0, help="USD for the judge sample (estimate)")
     ap.add_argument("--run-judges", action="store_true", help="make paid judge calls (dedicated ledger env needed)")
     ap.add_argument("--no-tirith", action="store_true")
@@ -1100,17 +1129,20 @@ def main(argv: Sequence[str] | None = None) -> None:
     ap.add_argument("--retry-unparsed", action="store_true",
                     help="with --run-judges, pay again for cached judge replies that did not parse")
     args = ap.parse_args(argv)
-    games, excluded = load_games(args.logs, cohort=args.cohort, allow_partial=args.allow_partial)
+    notes: list[str] = []
+    games, excluded = load_games(args.logs, cohort=args.cohort, notes=notes)
+    for n in notes:
+        print(f"game set (D12): {n}")
     if args.run_judges and not (os.environ.get("SHC_LEDGER_PATH") and os.environ.get("SHC_BUDGET_CAP_USD")):
         raise SystemExit("--run-judges needs SHC_LEDGER_PATH and SHC_BUDGET_CAP_USD (a dedicated judge ledger)")
     res = score_all(games, out_dir=args.out, judge_budget=args.judge_budget,
                     judge_fn=nanogpt_judge() if args.run_judges else None, run_tirith=not args.no_tirith,
                     max_workers=min(args.max_workers, 8), exclude_gated=not args.include_gated,
                     judge_concurrency=args.judge_concurrency, retry_unparsed=args.retry_unparsed)
-    res["keys"]["S6.n_excluded"] = len(excluded)
+    left_out = count_left_out(excluded)
+    res["keys"].update(left_out)
     paths = write_outputs(res, args.out)
-    print(json.dumps({"games": len(games), "excluded": len(excluded), **{k: str(v) for k, v in paths.items()}},
-                     indent=1))
+    print(json.dumps({"games": len(games), **left_out, **{k: str(v) for k, v in paths.items()}}, indent=1))
     print(table_md(res["metrics"], res["keys"]))
 
 

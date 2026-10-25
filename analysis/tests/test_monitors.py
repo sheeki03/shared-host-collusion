@@ -492,3 +492,43 @@ def test_real_judge_on_pilot_games(monkeypatch):
     assert rows["error"].isna().mean() >= 0.5            # most replies parse; failures stay unknown
     truth = M.game_truth(M.truth_table(pick), ("game_id", "firm"))
     print(truth.to_string())
+
+
+# ---------------------------------------------------------------------------------------------------- D12 game set
+def _sample(game, *, done, error=None):
+    from types import SimpleNamespace as NS
+    meta = {**game["meta"], "result": {"rows": game["rows"], "outputs": game["outputs"], "gate": game["gate"]}}
+    return NS(id=meta["game_id"], metadata=meta, error=NS(message=error) if error else None, completed_at=done)
+
+
+def test_load_games_applies_the_d12_game_set(monkeypatch):
+    """Complete games of logs not marked success are admitted; the first-finished copy of a duplicated game is kept;
+    an errored sample of a game completed elsewhere is superseded; an errored-only game is the one exclusion."""
+    from types import SimpleNamespace as NS
+    import inspect_ai.log as ilog
+    g = {k: make_game(k, "SHR-AWARE", seed=i) for i, k in enumerate(("g1", "g2", "g3", "g4"))}
+    late = make_game("g1", "SHR-AWARE", seed=0, leak=3.0)            # the relaunch's play of g1
+    logs = {"a.eval": NS(status="started", eval=NS(created="2026-10-25T16:54:00+00:00", eval_id="A"),
+                         samples=[_sample(g["g1"], done="2026-10-25T17:05:00+00:00"),
+                                  _sample(g["g2"], done=None, error="CancelledError()")]),
+            "b.eval": NS(status="cancelled", eval=NS(created="2026-10-25T17:16:00+00:00", eval_id="B"),
+                         samples=[_sample(late, done="2026-10-25T17:40:00+00:00"),
+                                  _sample(g["g2"], done="2026-10-25T17:50:00+00:00"),
+                                  _sample(g["g3"], done="2026-10-25T17:55:00+00:00")]),
+            "c.eval": NS(status="error", eval=NS(created="2026-10-25T18:00:00+00:00", eval_id="C"),
+                         samples=[_sample(g["g4"], done=None, error="SandboxUnavailable")])}
+    monkeypatch.setattr(ilog, "list_eval_logs", lambda _d: [NS(name=n) for n in reversed(list(logs))])
+    monkeypatch.setattr(ilog, "read_eval_log", lambda info: logs[info.name])
+    games, left = M.load_games(["logs"])
+    assert {x["meta"]["game_id"]: x["log"] for x in games} == {"g1": "a.eval", "g2": "b.eval", "g3": "b.eval"}
+    kept_g1 = next(x for x in games if x["meta"]["game_id"] == "g1")
+    assert kept_g1["rows"] == g["g1"]["rows"]                        # the first-finished play, not the relaunch
+    assert {(e["game_id"], e["log"], e["selection"]) for e in left} == {
+        ("g1", "b.eval", "duplicate"), ("g2", "a.eval", "superseded"), ("g4", "c.eval", "incomplete")}
+    assert M.count_left_out(left) == {"S6.n_excluded": 1, "S6.n_duplicates_dropped": 1, "S6.n_superseded": 1}
+    logs["b.eval"].samples[0].completed_at = None                    # the rule cannot be applied: fail closed
+    with pytest.raises(M.game_set.GameSetError, match="no completed_at"):
+        M.load_games(["logs"], strict=True)
+    notes: list[str] = []
+    games, _ = M.load_games(["logs"], notes=notes)
+    assert notes and {x["meta"]["game_id"]: x["log"] for x in games}["g1"] == "a.eval"

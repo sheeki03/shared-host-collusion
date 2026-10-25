@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from analysis import coding, confirmatory, dataset, llm_coder, report_outputs as ro
+from analysis import coding, confirmatory, dataset, game_set, llm_coder, report_outputs as ro
 from analysis import monitors as M
 from analysis.tests.test_monitors import make_game, mock_replay
 
@@ -621,3 +621,189 @@ def test_coding_keys_come_from_llm_coder(tmp_path):
     assert other["coding.n_candidates"] == "pending" and other["coding.handcheck.kappa"] == "pending"
     pre = ctx_for(n_cands=5, preliminary=True, coding_summary=str(sp))
     assert pre["coding.n_candidates"] == 4 and pre["coding.status"] == "partial"
+
+
+# ---------------------------------------------------------------------------------------------------- D12 game set
+D12_T0 = "2026-10-25T18:00:00+00:00"
+
+
+def _copy(sample, *, rid: str, cost: float, completed_at: str, shift: float = 0.0, error: str | None = None,
+          keep_rounds: int | None = None):
+    """Another play of the same game (a relaunch with the same seed): its own reservation and cost, actions shifted
+    so that the copy that enters can be told apart; `error`/`keep_rounds` make it an errored, partial sample."""
+    import copy as _copy_mod
+    s = _copy_mod.deepcopy(sample)
+    res = s.metadata["result"]
+    for r in res["rows"]:
+        r["action"] = r["action"] + shift
+    if keep_rounds is not None:
+        res["rows"] = [r for r in res["rows"] if r["t"] <= keep_rounds]
+    res["calls"] = [dict(res["calls"][0], total_cost_usd=cost, cost_usd=cost,
+                         attempts=[dict(reservation_id=rid, outcome="ok", settled_usd=cost, status=200)])]
+    s.completed_at = completed_at
+    s.error = SimpleNamespace(message=error) if error else None
+    return s
+
+
+def _d12_setup(tmp_path, monkeypatch):
+    """Three logs of one host directory: A (stopped launch, 'started'), B (stopped relaunch, 'cancelled'), C (the
+    final relaunch, 'success'). X: complete in A (17:05) and C (18:00) -> A kept. Y: complete in B (17:20) and C
+    (17:10) -> C kept (the later log, the earlier finish). Z: complete in A and B at the same second -> A kept (earlier
+    log start). W: errored partial sample in A (its saved call billed), complete in C -> superseded. P: complete only
+    in B (a cancelled log) -> admitted. V: errored in A only -> a harness-error exclusion. Ledgers: the stopped
+    launches' ledger is retired (two open reservations, one transport-error flag on X's kept attempt); the final
+    ledger is passed twice (a shorter synced copy has the same ledger ID)."""
+    base = _samples()
+    for i, s in enumerate(base):
+        s.completed_at = f"2026-10-25T18:{i // 60:02d}:{i % 60:02d}+00:00"
+    by_id = {s.metadata["game_id"]: s for s in base}
+    ids = list(by_id)
+    X, Y, Z, W, P = ids[0], ids[9], ids[18], ids[27], ids[36]
+    by_id[Y].completed_at = "2026-10-25T17:10:00+00:00"
+    v = _copy(base[45], rid="rid-V", cost=0.0, completed_at=None, error="CancelledError()", keep_rounds=2)
+    v.metadata = {**v.metadata, "game_id": "deep:m1:core-pricing:ISO-AWARE:1009", "seed": 1009}
+    v.metadata.pop("result")
+    a = [_copy(by_id[X], rid="rid-XA", cost=0.002, completed_at="2026-10-25T17:05:00+00:00", shift=5.0),
+         _copy(by_id[Z], rid="rid-ZA", cost=0.002, completed_at="2026-10-25T17:30:00+00:00", shift=5.0),
+         _copy(by_id[W], rid="rid-WA", cost=0.003, completed_at=None, error="CancelledError()", keep_rounds=3), v]
+    b = [_copy(by_id[Y], rid="rid-YB", cost=0.002, completed_at="2026-10-25T17:20:00+00:00", shift=5.0),
+         _copy(by_id[Z], rid="rid-ZB", cost=0.002, completed_at="2026-10-25T17:30:00+00:00", shift=9.0),
+         by_id[P]]
+    c = [s for s in base if s.metadata["game_id"] not in (Z, P)]
+    logs = {
+        "file:///x/logs/2026-10-25T16-54-37_A.eval": SimpleNamespace(
+            status="started", samples=a, eval=SimpleNamespace(created="2026-10-25T16:54:37+00:00", eval_id="evA"),
+            stats=SimpleNamespace(started_at="")),
+        "file:///x/logs/2026-10-25T17-16-48_B.eval": SimpleNamespace(
+            status="cancelled", samples=b, eval=SimpleNamespace(created="2026-10-25T17:16:48+00:00", eval_id="evB"),
+            stats=SimpleNamespace(started_at="")),
+        "file:///x/logs/2026-10-25T17-35-00_C.eval": SimpleNamespace(
+            status="success", samples=c, eval=SimpleNamespace(created="2026-10-25T17:35:00+00:00", eval_id="evC"),
+            stats=SimpleNamespace(started_at="2026-10-25T17:35:00+00:00"))}
+    infos = [SimpleNamespace(name=n) for n in logs]
+    monkeypatch.setattr(dataset, "list_eval_logs", lambda _d: list(reversed(infos)))
+    monkeypatch.setattr(dataset, "read_eval_log", lambda info: logs[str(info.name)])
+    monkeypatch.setattr(confirmatory, "PRIVATE_RUNS", tmp_path.resolve())
+    logdir = tmp_path / "logs"
+    logdir.mkdir()
+    manifest = tmp_path / "specs.json"
+    specs = {s.metadata["game_id"]: {k: x for k, x in s.metadata.items() if k != "result"} for s in base + [v]}
+    manifest.write_text(json.dumps(list(specs.values())))
+
+    def line(ev, rid=None, **kw):
+        return json.dumps({"event": ev, "id": rid, **kw}) + "\n"
+    old_ids = {s.metadata["result"]["calls"][0]["attempts"][0]["reservation_id"]: s.metadata["result"]["calls"][0]
+               ["total_cost_usd"] for s in a + b if "result" in s.metadata}
+    new_ids = {s.metadata["result"]["calls"][0]["attempts"][0]["reservation_id"]: 0.001 for s in c}
+    old = tmp_path / "ledger-old.jsonl"
+    old.write_text(line("init", "L-old", cap="10") + "".join(line("reserve", r, est_max=0.5) for r in old_ids)
+                   + "".join(line("settle", r, actual=x) for r, x in old_ids.items())
+                   + line("flag", "rid-XA", reason="transport_error:ReadError", actual=0.002)
+                   + line("reserve", "open-1", est_max=0.5) + line("reserve", "open-2", est_max=0.25))
+    new = tmp_path / "ledger-new.jsonl"
+    body = line("init", "L-new", cap="10") + "".join(line("reserve", r, est_max=0.5) + line("settle", r, actual=x)
+                                                     for r, x in new_ids.items())
+    new.write_text(body)
+    (tmp_path / "copy").mkdir()
+    short = tmp_path / "copy" / "ledger-new.jsonl"
+    short.write_text(body[: body.index("\n", len(body) // 2) + 1])     # an older sync of the same ledger
+    loaded = game_set.load_tables([str(logdir)], cohort="confirmatory")
+    sheet = coding.export_blinded(loaded.tables["candidates"], tmp_path / "labels.csv", seed=1)
+    review = pd.read_csv(sheet, dtype=str, keep_default_na=False)
+    review["label"] = "yes"
+    review.to_csv(sheet, index=False)
+    cfg = dict(log_dirs=[str(logdir)], manifests=[str(manifest)], labels=str(sheet), ledgers=[str(new), str(short)],
+               retired_ledgers=[str(old)], accept_flagged_ledger=True, n_boot=49, n_perm=99, figures=False)
+    return SimpleNamespace(logs=logs, cfg=cfg, ids=dict(X=X, Y=Y, Z=Z, W=W, P=P, V=v.metadata["game_id"]),
+                           old=old, new=new, short=short, logdir=logdir, n_base=len(base))
+
+
+def test_d12_duplicates_superseded_and_unfinished_logs(tmp_path, monkeypatch):
+    d = _d12_setup(tmp_path, monkeypatch)
+    ids = d.ids
+    out = tmp_path / "out"
+    r = ro.run(ro.Config(**d.cfg, out=str(out)))
+    # the first-finished copy of each duplicated game enters; complete games of non-success logs are admitted
+    assert r["meta.n_duplicates_dropped"] == 3 and r["meta.n_superseded"] == 1
+    assert r["meta.n_complete"] == d.n_base and r["meta.n_excluded"] == 1 == r["meta.n_excluded_harness_error"]
+    assert r["meta.n_complete_from_unfinished_logs"] == 3            # X and Z from A, P from B
+    dup = pd.read_csv(out / "tables" / "duplicates.csv").set_index("game_id")
+    assert set(dup.index) == {ids["X"], ids["Y"], ids["Z"]}
+    assert dup.loc[ids["X"], "kept_log"].endswith("_A.eval") and dup.loc[ids["X"], "dropped_log"].endswith("_C.eval")
+    assert dup.loc[ids["Y"], "kept_log"].endswith("_C.eval") and dup.loc[ids["Y"], "dropped_log"].endswith("_B.eval")
+    assert dup.loc[ids["Z"], "kept_log"].endswith("_A.eval") and dup.loc[ids["Z"], "dropped_log"].endswith("_B.eval")
+    games = pd.read_csv(out / "games.csv").set_index("game_id")
+    assert games.loc[ids["X"], "log"].endswith("_A.eval") and games.loc[ids["Y"], "log"].endswith("_C.eval")
+    assert games.loc[ids["P"], "log"].endswith("_B.eval") and ids["V"] not in games.index
+    ex = pd.read_csv(out / "tables" / "exclusions.csv")
+    assert (ex["class"] == ro.DUPLICATE_CLASS).sum() == 3 and (ex["class"] == ro.SUPERSEDED_CLASS).sum() == 1
+    assert ex.loc[ex["class"] == ro.SUPERSEDED_CLASS, "game_id"].tolist() == [ids["W"]]
+    assert ex.loc[ex["class"] == "prereg exclusion", "game_id"].tolist() == [ids["V"]]
+    assert "finished first" in ex.loc[ex["class"] == ro.DUPLICATE_CLASS, "reason"].iloc[0]
+    assert ex.loc[ex["class"] == ro.DUPLICATE_CLASS, ["model", "scenario", "arm", "log"]].notna().all().all()
+    # every saved call is reconciled: kept games, the three dropped copies and the superseded sample's billed call
+    kept = 0.001 * (d.n_base - 2) + 0.002 * 2            # X and Z enter with their A copies (0.002 each)
+    assert r["meta.ledger_reconciled"] is True and r["meta.cost_kept_games_usd"] == pytest.approx(kept)
+    assert r["meta.cost_dropped_duplicates_usd"] == pytest.approx(0.001 + 0.002 + 0.002)
+    assert r["meta.cost_superseded_usd"] == pytest.approx(0.003) and r["meta.cost_excluded_usd"] == 0
+    assert r["meta.cost_all_usd"] == pytest.approx(kept + 0.005 + 0.003)
+    assert r["meta.total_cost_usd"] == pytest.approx(kept)
+    assert r["meta.ledger_open_retired_n"] == 2 and r["meta.ledger_open_retired_usd"] == pytest.approx(0.75)
+    assert r["meta.ledger_open_live_n"] == 0 and r["meta.ledger_n_files"] == 2 and r["meta.ledger_n_retired"] == 1
+    assert r["meta.ledger_flags"] == 1 and r["meta.ledger_flagged_attempts_admitted"] == 1
+    assert r["meta.ledger_settled_usd"] == pytest.approx(r["meta.cost_all_usd"])     # open reservations never spend
+    assert r["meta.ledger_unmatched_settled_usd"] == pytest.approx(0)
+    assert "copy" in " ".join(r["notes"])                 # the shorter synced ledger copy was read once
+    text = (out / "tables" / "duplicates.md").read_text()
+    assert "D12" in text and ids["X"] in text
+
+
+def test_d12_ledger_failures_close_the_run(tmp_path, monkeypatch):
+    d = _d12_setup(tmp_path, monkeypatch)
+
+    def recon(**kw):
+        ctx = ro.Ctx(cfg=ro.Config(**{**d.cfg, **kw}, out=str(tmp_path / "o")))
+        t = ro.load_logs(ctx)
+        ro.coverage(ctx, t)
+        ro.reconcile(ctx, t)
+        return ctx
+    assert recon().res["meta.ledger_reconciled"] is True
+    with pytest.raises(ro.AnalysisError, match="flagged paid attempt rid-XA"):      # D8 flags need the audit flag
+        recon(accept_flagged_ledger=False)
+    with pytest.raises(ro.AnalysisError, match="open reservations"):               # a stopped ledger not declared
+        recon(ledgers=[str(d.new), str(d.old)], retired_ledgers=[])
+    pre = recon(ledgers=[str(d.new), str(d.old)], retired_ledgers=[], preliminary=True)
+    assert pre.res["meta.ledger_open_live_n"] == 2 and any("open reservations" in n for n in pre.notes)
+    both = recon(ledgers=[str(d.new), str(d.old)], retired_ledgers=[str(d.old)])     # listed twice: read once
+    assert both.res["meta.ledger_n_files"] == 2 and both.res["meta.ledger_open_retired_n"] == 2
+    # a breach (a charge above the reservation) on an analysed attempt is never admitted, even when audited
+    saved = d.new.read_text()
+    rid = next(json.loads(ln)["id"] for ln in saved.splitlines() if '"settle"' in ln)
+    d.new.write_text(saved + json.dumps({"event": "flag", "id": rid, "reason": "over_est_max"}) + "\n")
+    with pytest.raises(ro.AnalysisError, match="over_est_max"):
+        recon()
+    d.new.write_text(saved)
+    # a dropped duplicate's call is billed: it must be in a ledger too
+    d.old.write_text("".join(ln for ln in d.old.read_text().splitlines(keepends=True) if "rid-YB" not in ln))
+    with pytest.raises(ro.AnalysisError, match="no ledger closure for saved reservation rid-YB"):
+        recon()
+
+
+def test_d12_monitors_see_the_same_game_set(tmp_path, monkeypatch):
+    """analysis/monitors.py on the same logs keeps the same copies, and report_outputs' S6 sync check passes."""
+    import inspect_ai.log as ilog
+    d = _d12_setup(tmp_path, monkeypatch)
+    monkeypatch.setattr(ilog, "list_eval_logs", dataset.list_eval_logs)
+    monkeypatch.setattr(ilog, "read_eval_log", dataset.read_eval_log)
+    games, left = M.load_games([str(d.logdir)])
+    got = {g["meta"]["game_id"]: g["log"] for g in games}
+    assert len(got) == d.n_base and got[d.ids["X"]].endswith("_A.eval") and got[d.ids["Y"]].endswith("_C.eval")
+    assert got[d.ids["Z"]].endswith("_A.eval") and got[d.ids["P"]].endswith("_B.eval")
+    assert M.count_left_out(left) == {"S6.n_excluded": 1, "S6.n_duplicates_dropped": 3, "S6.n_superseded": 1}
+    out = tmp_path / "s6"
+    res = M.score_all(games, out_dir=out, judge_budget=0.0, judge_fn=None, replay_fn=mock_replay())
+    res["keys"].update(M.count_left_out(left))
+    M.write_outputs(res, out)
+    r = ro.run(ro.Config(**d.cfg, monitor_results=str(out / "monitor_results.json"), out=str(tmp_path / "rep")))
+    assert r["S6.sync.match"] is True and r["S6.sync.n_missing"] == r["S6.sync.n_extra"] == 0
+    assert r["S6.n_duplicates_dropped"] == r["meta.n_duplicates_dropped"] == 3
