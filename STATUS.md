@@ -55,3 +55,22 @@ Times are IST. Newest entries at the bottom of each step.
 - Runner dry runs generated **14 pilot probes, 28 pilot smoke games and 1,131 full-game specs**. Current read-only balance check: **$128.93**; the script now prints only the USD balance.
 - **Full-grid schedule remains a separate decision after the pilot.** The true 30-game mock rate was 2,000 game-rounds/hour, implying roughly 21 h of Docker work for 41,640 planned rounds before real model latency, monitors and report writing. This short-wave projection does not promise deadline completion. The pilot must measure real cost, latency and throughput before funding/freezing any confirmatory run or deciding a contingency.
 - The old wedged `shcv2explore-firm_a-1` remains untouched; restarting Docker Desktop would interrupt healthy product containers and was not needed for these tests.
+
+## Step 4 pilot and Step 5 decisions (25 Oct, 21:46–22:23 IST)
+- Docker Desktop had quit at 19:16; restarted at 21:50 (product containers came back on their own).
+- Provider fixes found by the pilot: nanoGPT's pending-cost estimates (D1) and full-context reservations (D2). Pilot: probes 13/14 (Kimi outage, later back), smoke 28/28; output caps raised (D3). Pilot spend about $3.6.
+- Owner decisions: full 40-round grid (D4), $750 top-up (balance $1,126.71), extra machines.
+- **Pre-registration frozen at 47a1c35, 22:23:19 IST** (tag `prereg-freeze`).
+
+## Step 6 confirmatory runs (from 22:24 IST; ongoing)
+- Machines: the Mac (gated arms; done 00:50), Contabo VPS 161.97.142.53 (done 02:04), the owner's production VPS (retired 00:09 at load 47; site unaffected), three instabox VPS (8/8/4 vCPU).
+- Relaunches and rebalancing: D6 (22:46), D10 (23:58), D11 (00:16), D15 (01:31). Network drops on instabox killed about 146 in-flight games (00:37–00:51); fixed by D13 and re-run with the same seeds (D15).
+- 505 of 1,131 games complete at the 01:30 sync (D12 rule: 8 duplicates, first-finished copy kept). Remaining games run on the instabox hosts; ETA about 03:15–03:30 IST.
+- Spend: about $464 real by 02:09; balance $664.55.
+
+## Analysis, report and additions built overnight (all pre-declared before their data)
+- Analysis machinery: report_outputs, game_set (D12), llm_coder (pinned rubric), monitors (S6), coding fixes, ledger union reconciliation (D8/D8a).
+- Report draft `report/REPORT.md` (placeholders only for results), `report/APPENDIX.md` (generated), `report/references.bib` (54 verified), channel taxonomy (Appendix F), OpenAI Oct 2026 sandbox red-teaming context (D14 scan).
+- Extensions E1–E5 (`prereg/EXTENSIONS.md`, harness D17): replication, 100-round horizon, ISO-ANY, secret exchange, price signalling; 216 games, run after the main grid.
+- Exploratory A1–A4 (`prereg/EXPLORATORY.md`, D16): message leakage probe, note-to-board pathway, price-digit audit, ISO residual-channel calibration (idle run on 161.97.142.53 started 02:04).
+- Review page for the owner: https://claude.ai/artifact/VWPxkkiKVfsdVHbmp6bPrd (private).
