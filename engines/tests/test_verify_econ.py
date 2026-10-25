@@ -712,10 +712,11 @@ def independent_galor(sid: str, n: int) -> dict:
     # common shock only: types are forecasts s = d + e
     dg, wd = _tn_grid(0.20, n)
     eg, we = _tn_grid(0.20, n)
-    svals = sorted({round(dg[k] + eg[l], 12) for k in range(n) for l in range(n)})
+    svals = sorted({round(dg[k] + eg[err_idx], 12) for k in range(n) for err_idx in range(n)})
     tix = {s: i for i, s in enumerate(svals)}
     combos = [(k, la, lb, wd[k] * we[la] * we[lb]) for k in range(n) for la in range(n) for lb in range(n)]
-    typ = {(k, l): tix[round(dg[k] + eg[l], 12)] for k in range(n) for l in range(n)}
+    typ = {(k, err_idx): tix[round(dg[k] + eg[err_idx], 12)]
+           for k in range(n) for err_idx in range(n)}
     nt = len(svals)
     x0 = mk.nash(mk.value(0, 0), mk.value(0, 0))[0]
     pa, pb = np.full(nt, x0), np.full(nt, x0)

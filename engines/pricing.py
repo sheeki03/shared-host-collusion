@@ -459,7 +459,7 @@ class PricingEngine:
         and its private values (offer, hint), plus a proposal to keep prices high (offer only)."""
         if mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}, got {mode!r}")
-        m = self._market(scenario_id)
+        self._market(scenario_id)  # validate the scenario before looking up its framing
         lab = LABELS[scenario_id]
         fr = FRAMINGS[scenario_id]
         action = self.scripted_action(scenario_id, draw, rival)
