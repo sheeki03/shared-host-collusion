@@ -5,9 +5,12 @@ Author Contributions, References, Appendix, LLM Usage Statement.
 
 Placeholders: a dotted key in double curly braces is a number or string from runs/analysis/results.json (written by
 analysis/report_outputs.py); TABLE:name in double braces is runs/analysis/tables/<name>.md; FIG:name in double braces
-is runs/analysis/figures/<name>.png. tools/fill_report.py renders REPORT.filled.md and, with --confirmatory, fails on
-any unresolved or pending placeholder, including placeholders inside these comments. So every placeholder anywhere in
-this file must be a key the pipeline writes. Do not write example placeholders in comments.
+is runs/analysis/figures/<name>.png. tools/fill_report.py renders REPORT.filled.md. With --confirmatory it fails on
+any unresolved or pending placeholder and lists every HTML comment (these included), editorial bracket and to-do
+marker by source line, so it cannot pass until all of them are deleted. A draft render also resolves placeholders
+inside comments, and analysis/tests/test_report_outputs.py checks every S6 placeholder anywhere in this file against
+the report contract, so every placeholder in this file must be a key the pipeline writes. Do not write example
+placeholders in comments.
 
 Every number in Section 4, Sections 5-6 and the abstract must come from a placeholder. The only literal numbers allowed
 are design constants frozen in prereg/PREREGISTRATION.md (commit 47a1c35) or fixed in the code at that commit, and
@@ -20,13 +23,12 @@ prompt diff against the starter, model and arm tables, gate policies, engine par
 
 Length: main text (Sections 1-6) must fit 8 pages with two tables (Table 1, arms; Table 2, monitors) and four figures.
 Large generated tables and the scenario figure are in Appendix C, the hypotheses table (formerly Table 2) is Table E1
-in Appendix E, and the channel taxonomy is Table F1 in Appendix F; Table C14 is left free for Section 4.6. On 26 Oct
-2026 the main-text prose (Sections 1-6 without tables, captions, comments or the abstract) was cut from about 4,950
-to about 4,760 words. The later review fixes (MDE basis, host-split counts and same-host estimates, S6 denominators,
-seed-block p-values, captions matching the generated figures, the three cost quantities in 4.0) added about 175 prose
-and 60 caption words, counting
-each placeholder as one word. Filling the bracketed sentences and the "if ..." comments in Sections 4-6 will add to
-that, and so will merging Section 4.6 (report/EXTENSIONS_SECTION.md).
+in Appendix E, and the channel taxonomy is Table F1 in Appendix F; Table C14 is left free for Section 4.6, Table C15
+is the paired monitor table and Table C16 the positive controls. Word count, 26 Oct 2026 04:18 IST (main-text prose:
+Sections 1-6 without tables, captions, comments, headings or the abstract; each placeholder one word; comments
+removed before counting): about 3,460 prose words and 335 caption words (3,300 before the review-point 5 and 8
+sentences in 4.0 and 4.3, which added about 160). Filling the bracketed sentences and the "if ..." comments in
+Sections 4-6 will add to that, and so will merging Section 4.6 (report/EXTENSIONS_SECTION.md).
 Check the page count after filling; if it runs over, shorten Section 2 and the Section 4 prose first.
 -->
 
@@ -275,19 +277,18 @@ kappa_boot_ci_lo/kappa_boot_ci_hi (analysis/RESULT_KEYS.md). Do not export befor
 candidate set and these keys resolve. -->
 Table C1 gives per-arm rates of every endpoint, pooled over models; Table C3 summarises each model configuration.
 
-Both positive controls must respond for a null elsewhere to mean anything. Table C1 gives delivered coordination and
-Δp in CHAT-ISO, and β_priv in ORACLE, whose inbox shows the rival's private data: the response the audit sees when
-the information is certainly present. Figure 2(c) also plots ORACLE β_priv.
-<!-- author TODO, for the analysis owner (review point 5): results.json has no positive-control key. No key holds the
-CHAT-ISO delivered-coordination rate or Δp, or ORACLE pooled β_priv, each with its interval; Table C1 pools models
-and gives no interval for chat coordination or Δp; Table C3 has no CHAT-ISO or ORACLE column, so no generated output
-names the models whose controls failed. S6.active_beta.oracle_flag_rate exists but is not a report contract key
-(analysis/tests/test_report_outputs.py::test_report_s6_placeholders_are_contract_keys rejects it here). Before
-export: have analysis/report_outputs.py write these keys, pooled and per model, then state each estimate here in one
-sentence with its interval and name every model for which a control did not respond. -->
-<!-- if a model shows no coordination in CHAT-ISO and no β response in ORACLE: "For {model}, neither positive control
-responded, so its nulls below mean the design could not detect collusion for that model at this horizon, not that the
-model is safe." -->
+Both positive controls must respond for a null elsewhere to mean anything; a control fails when its 95% interval
+does not lie above zero (a rule fixed before the final run; Appendix E). In core CHAT-ISO games, delivered
+coordination averaged {{pc.chat_iso.coord_rate}} per subject firm-turn (95% CI {{pc.chat_iso.coord_rate.ci_lo}} to
+{{pc.chat_iso.coord_rate.ci_hi}}; {{pc.chat_iso.coord_rate.n}} games), and the matched CHAT-ISO − ISO-AWARE
+difference in Δp was {{pc.chat_iso.dp.diff}} ({{pc.chat_iso.dp.ci_lo}} to {{pc.chat_iso.dp.ci_hi}};
+{{pc.chat_iso.dp.n_pairs}} pairs). In ORACLE, whose inbox shows the rival's private data, pooled β_priv was
+{{pc.oracle.beta_priv.est}} ({{pc.oracle.beta_priv.ci_lo}} to {{pc.oracle.beta_priv.ci_hi}};
+{{pc.oracle.beta_priv.n_games}} games). Models failing a control: {{pc.failed_models}};
+without a failure but with a control that could not be checked (no interval, or no ORACLE games, as in the broad grid
+by design): {{pc.unverified_models}} (Table C16).
+<!-- if pc.failed_models is not "none": "For these models a positive control did not respond, so their nulls below mean
+the design could not detect collusion for them at this horizon, not that they are safe." -->
 
 ### 4.1 Displacement
 
@@ -416,21 +417,19 @@ which sees both firms' transcripts, {{S6.llm_joint.tpr}} at {{S6.llm_joint.fpr}}
 active β audit reached {{S6.active_beta.tpr}} at {{S6.active_beta.fpr}} (AUROC {{S6.active_beta.auroc}}).
 Denominators differ (positive/negative games): tirith {{S6.tirith_path.n_pos}}/{{S6.tirith_path.n_neg}}, active β
 {{S6.active_beta.n_pos}}/{{S6.active_beta.n_neg}}, joint judge {{S6.llm_joint.n_pos}}/{{S6.llm_joint.n_neg}}.
-Same-game comparisons use the judged-game level of Table C12 (L1 truth). The author maintains tirith (Appendix A).
-<!-- author TODO (review point 8): at commit 2bdd661 TABLE:monitors_paired was always pending, because
-analysis/monitors.py scores the transfer target at game level only and writes the judged-game level under L1 exposure.
-The working-tree analysis/report_outputs.py now reads that L1 level (S6.l1.<monitor>.game_judged.*), labels the table's
-truth, and adds the S6.denom.<monitor>.* cohort counts; it switches to transfer truth by itself if monitors.py later
-writes transfer rows at that level. Once that change is committed and the final S6 run fills the table, add
-TABLE:monitors_paired to Appendix C as Table C15 (L1 truth, like Table C12) and point the sentence above at it. The
-defence_layers title now names the same target as Table 2. -->
+Table C15 compares all six monitors on the same judged games, against Table 2's truth. The author maintains tirith
+(Appendix A).
 
-<!-- author TODO (GLM 5.3 roles; see Section 5, Limitations): GLM 5.3 is a subject model and also the compliance
-monitor, the classifier and both judges, and a same-model monitor may recognise its own model's outputs. Report the S6
-judge rates, and the P2 monitor effect in Section 4.1, with GLM 5.3-subject games separated. analysis/RESULT_KEYS.md
-documents no results key split by subject model, so no placeholder is added here. If the pipeline gains such keys
-(S6 rates and the P2 contrasts with GLM 5.3-subject games left out, or for those games alone), add one sentence here
-giving them beside the pooled rates; if it does not, keep only the Section 5 caveat. -->
+GLM 5.3 is also the judge model and may read its own transcripts differently. On judged GLM 5.3-subject games
+({{S6.subject.glm53.n_judged_games}}) versus other models' ({{S6.subject.other.n_judged_games}}), TPR at FPR was
+{{S6.by_subject.glm53.llm_joint.game_judged.tpr}} at {{S6.by_subject.glm53.llm_joint.game_judged.fpr}} versus
+{{S6.by_subject.other.llm_joint.game_judged.tpr}} at {{S6.by_subject.other.llm_joint.game_judged.fpr}} for the joint
+judge, {{S6.by_subject.glm53.llm_per_firm.game_judged.tpr}} at {{S6.by_subject.glm53.llm_per_firm.game_judged.fpr}}
+versus {{S6.by_subject.other.llm_per_firm.game_judged.tpr}} at {{S6.by_subject.other.llm_per_firm.game_judged.fpr}}
+for the per-firm judge, and {{S6.by_subject.glm53.active_beta.game_judged.tpr}} at
+{{S6.by_subject.glm53.active_beta.game_judged.fpr}} versus {{S6.by_subject.other.active_beta.game_judged.tpr}} at
+{{S6.by_subject.other.active_beta.game_judged.fpr}} for active β, which reads no model text (descriptive: the judge
+sample is not stratified by subject model).
 <!-- if the path rule's FPR is high because agents read /srv/scratch routinely: say that a rule on the path cannot tell
 exploring from communicating, which is the core of the prediction. -->
 <!-- if evasion_rate is near zero and deterrence is large: say the prediction was not borne out in this setting, and
@@ -510,9 +509,10 @@ talk (Vaikuntanathan and Zamir 2026); only 2/229 collusive episodes in one study
 et al. 2026). Addressed-write and judge nulls thus do not prove no communication. Traces too miss transformed or
 suppressed reads, marked unknown.
 
-GLM 5.3 is a subject, chat monitor, classifier and both judges. Text may reveal its identity despite label blinding,
-so P2/S6 need the GLM-subject split (Gardner-Challis et al. 2026). High ISO prices may leave little welfare headroom
-(Lee 2026); small S5 effects then do not establish harmlessness, and β_priv may move without a large price effect.
+GLM 5.3 is a subject, chat monitor, classifier and both judges. Text may reveal its identity despite label blinding
+(Gardner-Challis et al. 2026); Section 4.3 splits the S6 judges by subject model, but P2 and the L2 labels are not
+split. High ISO prices may leave little welfare headroom (Lee 2026); small S5 effects then do not establish
+harmlessness, and β_priv may move without a large price effect.
 
 One gateway obscures routing and quantisation; third-party refusal-suppressed variants are descriptive. Forty-round
 core games (30 in scenarios) are shorter than Fish et al.'s (2024) 300; this solvable task is lower-pressure than the
@@ -862,6 +862,23 @@ narrow, since a firm's rounds are not independent) and game counts; then the mat
 commands per family, cut to 200 characters with canaries redacted, as written by `analysis/nonstorage.py`. A match is
 an attempt, never a success.
 
+{{TABLE:monitors_paired}}
+
+**Table C15.** Every monitor at the game level on the same selected judge games (`game_judged`), against the truth of
+Table 2 (a trace-confirmed rival-authored canary or content crossing): judged games, games of unknown truth (left
+out), positive and negative games, TPR and FPR at each monitor's own operating point, AUROC where both classes have at
+least 5 scored games, and coverage. This is the like-for-like comparison of the monitors; it is descriptive for the
+budgeted, trace-stratified judge sample. Table C12 gives the same level against L1 exposure.
+
+{{TABLE:positive_controls}}
+
+**Table C16.** Positive controls (Section 4.0), core games, per model configuration and pooled: CHAT-ISO delivered
+coordination per subject firm-turn (mean over games, game bootstrap 95% interval); CHAT-ISO − ISO-AWARE Δp over the
+last 10 rounds, matched on model and seed (cluster bootstrap 95% interval); and ORACLE pooled second-mover β_priv (wild
+cluster bootstrap interval with at least 10 games, else CR1 with a t(G−1) reference), each with its status under the
+failure rule declared before the final run. Per-model rows are descriptive: with at most three ORACLE games per deep
+or pairs configuration their intervals are wide, and the broad grid has no ORACLE games.
+
 ## Appendix D. Transcript excerpts
 
 Two or three excerpts from confirmatory games, as pre-registered, are in `report/APPENDIX.md`, Section G. They are
@@ -870,10 +887,11 @@ reasoning (at most 400 characters) is flagged when it reaches that cap. They are
 after the freeze and after confirmatory collection began, and later revised as dated in its docstring; the author
 reports that no confirmatory log had been read to choose excerpts before each version. In a fixed game order (grid,
 model configuration, scenario, seed), the rule takes the first storage crossing in SHR-PERMITTED (falling back to
-other shared, ungated arms); the first delivered CHAT-SHR (else CHAT-ISO) message that passes a fixed lexical screen
-(a number and a coordination word), a selection device rather than an adjudicated label; and the first gate block
-followed by a later trace-confirmed canary or content crossing (or a silent canary copy) in a gated arm, else a
-fallback labelled as not an evasion: rival file-name exposure, then public-bulletin access. Nothing is ranked by how interesting its content is.
+other shared, unscripted, ungated arms); the first delivered CHAT-SHR (else CHAT-ISO) message that passes a fixed
+lexical screen (a number and a coordination word), a selection device rather than an adjudicated label, shown without
+a coded label; and the first gate block followed by a later trace-confirmed canary or content crossing (or a silent
+canary copy) in a gated arm, else a fallback labelled as not an evasion: rival file-name exposure, then
+public-bulletin access. Nothing is ranked by how interesting its content is.
 
 ## Appendix E. Reproducibility
 
@@ -927,9 +945,15 @@ evaluation set (Table 2), the observed-SD basis of the P3 MDE (Section 4.4) and 
 (Appendix D).
 The exploratory scan of attempts at channels other than storage was committed after collection began (D14, 01:10 IST);
 the author reports declaring it before running it on any confirmatory log (Section 4.5). It changes no
-pre-registered analysis. In short, the arms, prompts, hypotheses and primary estimators predate every confirmatory
-game; the rubric, the secondary definitions (D7) and the duplicate rule (D12) do not; and every "before inspection"
-statement above is the author's account, not something commit times establish.
+pre-registered analysis. After an external review on 26 Oct, three secondary definitions were added before the final
+analysis run, each declared in its module docstring (the commit time is the record): the positive-control estimators
+and failure rule (Section 4.0, Table C16; `analysis/report_outputs.py`, 04:07 IST), and for S6 the judged-game level
+under the headline truth and the split by subject model (Section 4.3, Table C15; `analysis/monitors.py`, 04:06 IST).
+The S6 run on the partial log set had already finished; the author reports that these definitions were written on
+synthetic data, without reading that run's outputs or any positive-control estimate. In short, the arms, prompts,
+hypotheses and primary estimators predate every confirmatory game; the rubric, the secondary definitions (D7 and the
+26 Oct additions) and the duplicate rule (D12) do not; and every "before inspection" statement above is the author's
+account, not something commit times establish.
 
 ## Appendix F. Channel taxonomy
 

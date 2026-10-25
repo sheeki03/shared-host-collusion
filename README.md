@@ -174,21 +174,35 @@ MARGS=(--out-dir runs/analysis/manifest --overwrite)
 for f in runs/shards/*.json runs/shards-v2/*.json runs/remote/*/shards/*.json; do MARGS+=(--shard "$f"); done
 for f in "${LEDGERS[@]}"; do MARGS+=(--ledger "$f"); done
 .venv/bin/python tools/run_manifest.py "${MARGS[@]}" "${LOGS[@]}"
-# 3. S6 monitor replay and judges -> runs/analysis/monitor_results.json, monitor_scores.csv, tables/monitors.md.
-#    The judges are paid, on a dedicated ledger outside the game-ledger globs above, created once:
-#    runs/analysis/judges/ledger.jsonl with a $25 cap (the job started 26 Oct 02:20 IST). A later run reopens it, and
-#    a ledger reopens only with its current cap (a different one needs an audited cap_change).
+# 3. S6 monitor replay and judges -> runs/analysis/monitor_results.json, monitor_scores.csv, monitor_metrics.csv,
+#    monitor_metrics_by_subject.csv (the GLM 5.3-subject split), tables/monitors.md.
+#    The judges are paid, on their own ledger outside the game-ledger globs above: runs/analysis/judges/ledger.jsonl,
+#    created once with a $25 cap that the owner approved (26 Oct 02:20 IST, together with the coder below; the first
+#    pass was launched by runs/start_analysis_calls.sh and ran on the partial log set). A ledger reopens only with its
+#    current cap; a different cap needs the owner's approval and an audited cap_change event. Resume (also the final
+#    pass on the complete log set) with exactly the first pass's settings: cached judge replies and tirith verdicts
+#    (runs/analysis/cache/) are reused, so only selected games without a cached reply are paid, on the same ledger,
+#    whose cap is the hard limit (it fails closed).
 mkdir -p runs/analysis/judges
 [ -e runs/analysis/judges/ledger.jsonl ] || \
   .venv/bin/python -c "from harness.ledger import BudgetLedger; BudgetLedger('runs/analysis/judges/ledger.jsonl', 25.0)"
-SHC_LEDGER_PATH=runs/analysis/judges/ledger.jsonl SHC_BUDGET_CAP_USD=25 \
-  .venv/bin/python -m analysis.monitors --logs "${LOGS[@]}" --out runs/analysis --judge-budget 25 --run-judges
+SHC_LEDGER_PATH=runs/analysis/judges/ledger.jsonl SHC_BUDGET_CAP_USD=25.0 \
+  .venv/bin/python -m analysis.monitors --logs "${LOGS[@]}" --out runs/analysis --run-judges --judge-budget 25 \
+  --max-workers 6 --judge-concurrency 6
 # 4. L2 / chat labels (paid), the blinded hand-check sheet (a person fills
 #    runs/analysis/handcheck/handcheck_sheet.csv), then the agreement. llm_coder creates its ledger on first use and
-#    reopens it after: runs/analysis/coding/ledger.jsonl (job started 02:20 IST), $50 since its audited cap_change
-#    (DEVIATIONS D18, 02:28 IST).
+#    reopens it after: runs/analysis/coding/ledger.jsonl (owner-approved job started 02:20 IST at a $12 cap; $50 cap
+#    since the owner-approved audited cap_change, DEVIATIONS D18, 02:28 IST). Coding is resumable: already-coded items
+#    are skipped, and one `label` process at a time may use the output directory (lock file), so never start a second
+#    one while a coder runs. The live pass (runs/restart_coder.sh, over freshly synced logs, while games still run)
+#    is, exactly:
+#      .venv/bin/python -m analysis.llm_coder label "${LOGS[@]}" --lenient --out runs/analysis/coding \
+#        --ledger runs/analysis/coding/ledger.jsonl --cap 50 --concurrency 16
+#    --lenient skips missing directories, unreadable (live) logs and the D12 fail-closed cases with a warning. After
+#    the last runner has finished and its logs are synced, run the final pass below without --lenient, so labels.csv
+#    covers exactly the candidates of the confirmatory report_outputs run (it fails as that run would):
 .venv/bin/python -m analysis.llm_coder label "${LOGS[@]}" --out runs/analysis/coding \
-  --ledger runs/analysis/coding/ledger.jsonl --cap 50
+  --ledger runs/analysis/coding/ledger.jsonl --cap 50 --concurrency 16
 .venv/bin/python -m analysis.llm_coder handcheck "${LOGS[@]}" --out runs/analysis/coding \
   --handcheck-dir runs/analysis/handcheck
 .venv/bin/python -m analysis.llm_coder agreement --out runs/analysis/coding --handcheck-dir runs/analysis/handcheck

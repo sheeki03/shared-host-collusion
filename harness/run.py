@@ -18,6 +18,29 @@ Budget: every subject/monitor call reserves the full advertised input-context co
 pinned price table before sending, then settles the provider-reported charge. This is a conservative local admission
 limit conditional on provider context/prices; an above-reservation charge is recorded and halts future calls.
 Pilot seeds (9000+) never enter confirmatory estimates. A ledger is initialized once and resumed explicitly.
+
+End-of-run reconciliation (replay-aware; written Mon 26 Oct 2026, 03:59 IST, before the final analysis runs; the
+commit that adds it is the declaration time).
+Bookkeeping only and outcome-blind: it reads ledger events and the saved per-attempt cost metadata, never game
+outcomes, and changes no game, prompt, selection rule or analysis. It applies to launches from this commit on; runners
+already started from pinned commits keep the old whole-run check, and analysis/confirmatory.py's per-attempt
+reconciliation remains the audit for every log. With Inspect's retry_on_error (D13) an errored game is replayed from
+round 1 and only the final attempt's calls are saved, so the earlier attempt's billed calls are in the ledger but in no
+saved sample; the old check (saved calls == ledger delta) then failed although nothing was missing. Now:
+- Before the first call the runner marks the end of the last complete ledger line. After the eval, every reservation
+  appended since the mark is attributed by its reservation id and the ledger's sample_id ("<sample id>#<epoch>"):
+  (1) saved: the id is an attempt of a call saved in a final sample, its closure equals the saved settled_usd, the
+      ledger sample_id is that sample's, and each call's total_cost_usd equals the sum of its attempts;
+  (2) replayed: not saved, but its sample_id is a final sample that Inspect replayed (non-empty error_retries): an
+      attempt billed in a discarded run of that game. Reported separately (USD, attempts, games), never a failure.
+  (3) anything else is unexplained and fails the run: a saved attempt with no ledger reservation since the mark, no
+      closure or a different amount; an unsaved reservation on a sample that was not replayed, is not in this run's
+      logs or has no sample_id; a settlement of a reservation made before the mark (another process on the ledger);
+      a malformed ledger line not closed off by a torn_line flag; an open reservation anywhere in the ledger; or a
+      ledger spend delta that differs from the window's settlements or from saved + replayed by more than 1e-8 USD.
+- Missing costs still fail closed exactly as before (completed_cost): an eval or sample error, a sample without its
+  saved game result and call list, or a call without total_cost_usd stops the run before any reconciliation.
+- The summary is printed and written to reconciliation_<tag>.json beside the spec file, also when it fails.
 """
 from __future__ import annotations
 
@@ -25,8 +48,12 @@ import argparse
 import json
 import os
 import random
-from collections import defaultdict
+from collections import Counter, defaultdict
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from typing import Any
 
 from harness.arms import (BROAD, CORE_ROUNDS, DEEP, EXT_GRID_NAMES, ORIGINAL_ARMS, PAIRS, PILOT_SEED_BASE,
                           SCENARIOS, GameSpec, ext_design, full_design)
@@ -79,12 +106,23 @@ def required_headroom(specs: list[GameSpec], concurrency: int) -> tuple[float, f
     return reservations[0], sum(reservations[:concurrency])
 
 
-def completed_cost(logs) -> float:
-    """Validate every sample and sum all provider attempts from saved per-game metadata."""
+TOL = Decimal("0.00000001")      # USD; the same tolerance as analysis/confirmatory.py
+INCOMPLETE = "incomplete Inspect evaluation; no result may be reported as complete:\n"
+
+
+@dataclass
+class SavedSample:
+    key: str            # "<sample id>#<epoch>": the ledger's sample_id for this game's calls
+    replays: int        # earlier attempts Inspect discarded and replayed (len(error_retries))
+    calls: list[dict]   # the final attempt's saved calls (harness/game.py), each with total_cost_usd and attempts
+
+
+def _saved_samples(logs) -> tuple[list[SavedSample], list[str]]:
+    """The final saved samples of `logs`, and every reason the evaluation is incomplete (fail closed)."""
     from inspect_ai.log import read_eval_log
 
-    total = 0.0
-    errors = []
+    out: list[SavedSample] = []
+    errors: list[str] = []
     for log in logs:
         if log.status != "success" or log.error:
             errors.append(f"eval status {log.status}: {str(log.error)[:150]}")
@@ -99,16 +137,229 @@ def completed_cost(logs) -> float:
             if not isinstance(result, dict) or not isinstance(result.get("calls"), list):
                 errors.append(f"sample {sample.id}: missing game calls/results")
                 continue
-            for call in result["calls"]:
-                cost = call.get("total_cost_usd")
-                if cost is None:
-                    errors.append(f"sample {sample.id}: call missing total_cost_usd")
-                else:
-                    total += float(cost)
+            calls = result["calls"]
+            if any(not isinstance(c, dict) or c.get("total_cost_usd") is None for c in calls):
+                errors.append(f"sample {sample.id}: call missing total_cost_usd")
+            out.append(SavedSample(f"{sample.id}#{getattr(sample, 'epoch', None)}",
+                                   len(getattr(sample, "error_retries", None) or []), calls))
+    return out, errors
+
+
+def completed_cost(logs) -> float:
+    """Validate every sample and sum all provider attempts from saved per-game metadata."""
+    samples, errors = _saved_samples(logs)
     if errors:
-        raise RuntimeError("incomplete Inspect evaluation; no result may be reported as complete:\n" +
-                           "\n".join(errors[:20]))
-    return total
+        raise RuntimeError(INCOMPLETE + "\n".join(errors[:20]))
+    return sum(float(c["total_cost_usd"]) for s in samples for c in s.calls)
+
+
+def _usd(x: Any) -> Decimal:
+    """Exact Decimal of a saved or ledger USD amount (floats via repr, as harness/ledger.py sums them)."""
+    if isinstance(x, bool) or not isinstance(x, (int, float, str, Decimal)):
+        raise ValueError(f"not a USD amount: {x!r}")
+    try:
+        d = Decimal(repr(x)) if isinstance(x, float) else Decimal(x)
+    except InvalidOperation as e:
+        raise ValueError(f"not a USD amount: {x!r}") from e
+    if not d.is_finite() or d < 0:
+        raise ValueError(f"not a USD amount: {x!r}")
+    return d
+
+
+@dataclass
+class LedgerWindow:
+    """The ledger events appended between two marks (byte offsets at line boundaries)."""
+    start: int
+    end: int
+    events: list[dict]
+    errors: list[str]
+
+
+def ledger_mark(path: str | os.PathLike) -> int:
+    """Byte offset just past the last complete ledger line: where this run's reconciliation window starts."""
+    return Path(path).read_bytes().rfind(b"\n") + 1
+
+
+def read_ledger_window(path: str | os.PathLike, start: int) -> LedgerWindow:
+    """Events on complete lines after `start`. An unterminated last line is not an event yet (as in harness/ledger.py);
+    a malformed line counts only if a later torn_line flag closes it off, otherwise it is an error."""
+    data = Path(path).read_bytes()
+    if len(data) < start:
+        return LedgerWindow(start, len(data), [], [f"ledger {path} shrank below the start mark {start}"])
+    end = max(start, data.rfind(b"\n") + 1)
+    events: list[dict] = []
+    torn: set[int] = set()
+    pos = start
+    for raw in data[start:end].split(b"\n")[:-1]:
+        try:
+            ev = json.loads(raw)
+            if not isinstance(ev, dict) or "event" not in ev:
+                raise ValueError("not a ledger event")
+        except ValueError:
+            torn.add(pos)
+        else:
+            if ev.get("event") == "flag" and ev.get("reason") == "torn_line":
+                torn.discard(ev.get("offset"))
+            events.append(ev)
+        pos += len(raw) + 1
+    errors = [f"malformed ledger line(s) at offset(s) {sorted(torn)[:3]} not closed off by a torn_line flag"] \
+        if torn else []
+    return LedgerWindow(start, end, events, errors)
+
+
+@dataclass
+class RunReconciliation:
+    """Saved calls of one run against the ledger events it appended (see the module docstring)."""
+    ledger_delta_usd: Decimal                  # BudgetLedger settled spend after the run minus before it
+    window_settled_usd: Decimal                # settlements on the ledger lines appended since the start mark
+    saved_usd: Decimal                         # ledger closures of attempts saved in final samples
+    saved_calls_usd: Decimal                   # the saved calls' own total_cost_usd (what completed_cost sums)
+    replayed_usd: Decimal                      # billed attempts of discarded (replayed) game runs
+    replayed_attempts: int
+    replayed_games: dict[str, dict]            # sample key -> {replays, attempts, usd}
+    n_samples: int
+    n_saved_attempts: int
+    open_reservations: int                     # anywhere in the ledger (never spend; fail closed)
+    flags: dict[str, int]                      # flag lines in the window, by reason class (text before ':')
+    unexplained: list[str] = field(default_factory=list)
+
+    @property
+    def unexplained_usd(self) -> Decimal:
+        return self.ledger_delta_usd - self.saved_usd - self.replayed_usd
+
+    @property
+    def ok(self) -> bool:
+        return not self.unexplained and abs(self.unexplained_usd) <= TOL and self.open_reservations == 0
+
+    def to_dict(self) -> dict:
+        return {"ok": self.ok, "ledger_delta_usd": float(self.ledger_delta_usd),
+                "window_settled_usd": float(self.window_settled_usd), "saved_usd": float(self.saved_usd),
+                "saved_calls_usd": float(self.saved_calls_usd), "replayed_usd": float(self.replayed_usd),
+                "replayed_attempts": self.replayed_attempts, "replayed_games": {
+                    k: {**v, "usd": float(v["usd"])} for k, v in sorted(self.replayed_games.items())},
+                "unexplained_usd": float(self.unexplained_usd), "n_samples": self.n_samples,
+                "n_saved_attempts": self.n_saved_attempts, "open_reservations": self.open_reservations,
+                "flags": dict(sorted(self.flags.items())), "unexplained": self.unexplained}
+
+
+def reconcile_run(logs, window: LedgerWindow, *, ledger_delta: float | Decimal,
+                  open_reservations: int = 0) -> RunReconciliation:
+    """Attribute every reservation in `window` to a saved attempt, a replayed attempt, or an unexplained difference.
+
+    Raises RuntimeError, as completed_cost does, when the evaluation itself is incomplete (missing costs fail closed).
+    """
+    samples, errors = _saved_samples(logs)
+    if errors:
+        raise RuntimeError(INCOMPLETE + "\n".join(errors[:20]))
+    problems = list(window.errors)
+    reserves: dict[str, dict] = {}
+    closures: dict[str, Decimal] = {}
+    flags: Counter = Counter()
+    window_settled = Decimal(0)
+    foreign = [0, Decimal(0)]
+    for ev in window.events:
+        kind, rid = ev.get("event"), ev.get("id")
+        if kind == "reserve":
+            reserves[rid] = ev
+        elif kind in ("settle", "release"):
+            amount = Decimal(0)
+            if kind == "settle":
+                try:
+                    amount = _usd(ev.get("actual"))
+                except ValueError:
+                    problems.append(f"ledger settle of {rid} has an unreadable amount {ev.get('actual')!r}")
+                    continue
+                window_settled += amount
+            if rid not in reserves:
+                foreign[0] += 1
+                foreign[1] += amount
+                continue
+            closures[rid] = amount
+        elif kind == "flag":
+            flags[str(ev.get("reason") or "unspecified").split(":", 1)[0]] += 1
+    if foreign[0]:
+        problems.append(f"{foreign[0]} ledger closure(s) (${foreign[1]}) of reservations made before this run "
+                        "(another process on this ledger?)")
+    delta = ledger_delta if isinstance(ledger_delta, Decimal) else Decimal(repr(float(ledger_delta)))
+    if abs(window_settled - delta) > TOL:
+        problems.append(f"ledger spend delta ${delta} differs from the settlements appended since the start mark "
+                        f"${window_settled}")
+
+    by_key = {s.key: s for s in samples}
+    used: set[str] = set()
+    saved = saved_calls = Decimal(0)
+    for s in samples:
+        for call in s.calls:
+            step = call.get("step")
+            try:
+                total = _usd(call.get("total_cost_usd"))
+            except ValueError:
+                problems.append(f"sample {s.key}: call {step} has an unreadable total_cost_usd")
+                continue
+            saved_calls += total
+            attempts = call.get("attempts")
+            if not isinstance(attempts, list) or not attempts:
+                problems.append(f"sample {s.key}: call {step} has no per-attempt cost record")
+                continue
+            amount, complete = Decimal(0), True
+            for att in attempts:
+                rid = att.get("reservation_id") if isinstance(att, dict) else None
+                if not isinstance(rid, str) or not rid or rid in used:
+                    problems.append(f"sample {s.key}: call {step} has a missing or duplicate reservation id {rid!r}")
+                    complete = False
+                    continue
+                used.add(rid)
+                res = reserves.get(rid)
+                if res is None:
+                    problems.append(f"sample {s.key}: saved attempt {rid} has no reservation since the start mark")
+                    complete = False
+                    continue
+                if res.get("sample_id") is not None and res.get("sample_id") != s.key:
+                    problems.append(f"sample {s.key}: saved attempt {rid} was reserved for {res.get('sample_id')}")
+                if rid not in closures:
+                    problems.append(f"sample {s.key}: saved attempt {rid} was never settled or released")
+                    complete = False
+                    continue
+                try:
+                    differs = abs(closures[rid] - _usd(att.get("settled_usd"))) > TOL
+                except ValueError:
+                    differs = True
+                if differs:
+                    problems.append(f"sample {s.key}: saved attempt {rid} settled_usd {att.get('settled_usd')!r} "
+                                    f"differs from the ledger ${closures[rid]}")
+                amount += closures[rid]
+            if complete and abs(amount - total) > TOL:
+                problems.append(f"sample {s.key}: call {step} total ${total} is not its attempts' sum ${amount}")
+            saved += amount
+
+    replayed: dict[str, dict] = {}
+    other: dict[str, list] = defaultdict(lambda: [0, Decimal(0)])
+    for rid, res in reserves.items():
+        if rid in used:
+            continue
+        sid = res.get("sample_id")
+        if rid not in closures:
+            problems.append(f"unsaved reservation {rid} (sample {sid}) was never settled or released")
+            continue
+        s = by_key.get(sid) if isinstance(sid, str) else None
+        if s is not None and s.replays > 0:
+            rec = replayed.setdefault(sid, {"replays": s.replays, "attempts": 0, "usd": Decimal(0)})
+            rec["attempts"] += 1
+            rec["usd"] += closures[rid]
+        else:
+            why = ("with no sample_id" if not isinstance(sid, str) else
+                   f"on sample {sid}, which is not in this run's logs" if s is None else
+                   f"on sample {sid}, which Inspect did not replay")
+            other[why][0] += 1
+            other[why][1] += closures[rid]
+    for why, (n, usd) in sorted(other.items()):
+        problems.append(f"{n} billed attempt(s) (${usd}) in no saved call, {why}")
+    return RunReconciliation(
+        ledger_delta_usd=delta, window_settled_usd=window_settled, saved_usd=saved, saved_calls_usd=saved_calls,
+        replayed_usd=sum((r["usd"] for r in replayed.values()), Decimal(0)),
+        replayed_attempts=sum(r["attempts"] for r in replayed.values()), replayed_games=replayed,
+        n_samples=len(samples), n_saved_attempts=len(used), open_reservations=open_reservations,
+        flags=dict(flags), unexplained=problems)
 
 
 def interleave(specs: list[GameSpec], seed: int = 0) -> list[GameSpec]:
@@ -265,6 +516,7 @@ def main() -> None:
     if led.remaining < wave:
         raise SystemExit(f"available budget ${led.remaining:.4f} cannot reserve the requested "
                          f"{a.concurrency}-game wave (${wave:.4f}); lower concurrency or explicitly increase cap")
+    mark = ledger_mark(a.ledger)   # start of this run's reconciliation window, before any call of this run
     before = led.spent
     os.environ["SHC_LEDGER_PATH"] = a.ledger
     os.environ["SHC_BUDGET_CAP_USD"] = str(a.cap)
@@ -280,12 +532,22 @@ def main() -> None:
                         fail_on_error=False, display="plain", log_realtime=False,
                         log_buffer=5,  # completed games reach the log file every 5 samples (crash loses little)
                         retry_on_error=2)  # a game that errors (e.g. network drop) is replayed from round 1, same seed (D13)
-    used = completed_cost(logs)
-    billed = led.spent - before
-    if led.open_reservations() or abs(used - billed) > 1e-8:
-        raise SystemExit(f"budget reconciliation failed: saved calls ${used:.6f}, ledger delta ${billed:.6f}, "
-                         f"open reservations {len(led.open_reservations())}")
-    print(f"completed {len(specs)} games; provider charges ${billed:.6f}; ledger flags {led.flags}")
+    completed_cost(logs)            # fail closed on any incomplete game or missing saved cost, as before
+    window = read_ledger_window(a.ledger, mark)
+    rec = reconcile_run(logs, window, ledger_delta=led.spent - before, open_reservations=len(led.open_reservations()))
+    report = run_dir / f"reconciliation_{tag}.json"
+    report.write_text(json.dumps({"written_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                                  "ledger": a.ledger, "log_dir": log_dir, "games": len(specs),
+                                  "window_bytes": [window.start, window.end], **rec.to_dict()}, indent=1))
+    replays = (f"replayed attempts ${rec.replayed_usd:.6f} ({rec.replayed_attempts} attempts on "
+               f"{len(rec.replayed_games)} replayed games, D13)")
+    if not rec.ok:
+        raise SystemExit(f"budget reconciliation failed: ledger delta ${rec.ledger_delta_usd:.6f}, saved attempts "
+                         f"${rec.saved_usd:.6f}, {replays}, unexplained ${rec.unexplained_usd:.6f}, open "
+                         f"reservations {rec.open_reservations} (details in {report}):\n" +
+                         "\n".join(rec.unexplained[:20]))
+    print(f"completed {len(specs)} games; provider charges ${rec.ledger_delta_usd:.6f} = saved attempts "
+          f"${rec.saved_usd:.6f} + {replays}; ledger flags {led.flags}; reconciliation {report}")
 
 
 if __name__ == "__main__":
