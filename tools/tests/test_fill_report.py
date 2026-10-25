@@ -266,9 +266,17 @@ def test_pending_lists_and_tables_block_final_render(tmp_path):
     rc, out = render(tmp_path, report("{{items}}"), results=data)
     assert rc == 1 and not out.exists()
     (tmp_path / "tables").mkdir()
-    (tmp_path / "tables" / "x.md").write_text("| result |\n|---|\n| insufficient data |\n")
+    (tmp_path / "tables" / "x.md").write_text("| result |\n|---|\n| pending |\n")
     rc, out = render(tmp_path, report("{{TABLE:x}}"))
     assert rc == 1 and not out.exists()
+
+
+def test_insufficient_data_cell_in_a_generated_table_is_final(tmp_path):
+    # revision 3: an honest 'insufficient data' cell (e.g. AUROC with too few games of one class) does not block
+    (tmp_path / "tables").mkdir()
+    (tmp_path / "tables" / "y.md").write_text("| monitor | auroc |\n|---|---|\n| judge | insufficient data |\n")
+    rc, out = render(tmp_path, report("{{TABLE:y}}"))
+    assert rc == 0 and out.exists()
 
 
 def test_out_cannot_replace_source(tmp_path):

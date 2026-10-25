@@ -182,14 +182,19 @@ def resolve(key: str, results: dict) -> tuple[str | None, bool]:
     return None, False
 
 
+TABLE_PENDING = re.compile(r"(?i)\bpending\b")
+
+
 def table_unfinished(body: str) -> bool:
-    """A generated table holds an unfinished value: the no-data marker, or pending / insufficient data outside the
-    header row. A column *named* pending (the coverage table) is not a value."""
+    """A generated table holds an unfinished value: the no-data marker, or 'pending' outside the header row (a column
+    *named* pending, as in the coverage table, is not a value). 'insufficient data' in a generated table cell is a
+    final, honest status (e.g. an AUROC with too few games of one class) and does not block the render; in prose it
+    still does, so the author states it in words (revision 3, 26 Oct 2026 04:36 IST)."""
     if "_No data yet._" in body:
         return True
     lines = body.splitlines()
     header = {i - 1 for i, line in enumerate(lines) if i and TABLE_SEPARATOR.match(line) and "|" in lines[i - 1]}
-    return any(PENDING_WORD.search(line) for i, line in enumerate(lines) if i not in header)
+    return any(TABLE_PENDING.search(line) for i, line in enumerate(lines) if i not in header)
 
 
 # Called once per placeholder: (token, offset of the placeholder in the rendered source, inserted text or None, kind)
