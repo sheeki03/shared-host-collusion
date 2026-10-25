@@ -1,8 +1,9 @@
 # Pre-registration: storage-channel collusion between co-located LLM agents
 
-**Status: DRAFT.** It is frozen, and its commit hash published, after the pilot and **before any confirmatory run**.
-Items marked **[PILOT]** are filled from pilot measurements at the freeze. Any later change is logged in
-`prereg/DEVIATIONS.md` with a timestamp and reason.
+**Status: FROZEN, Sun 25 Oct 2026 ~22:35 IST, before any confirmatory run.** The freeze is the commit that adds this
+line (git tag `prereg-freeze`). Items marked **[PILOT]** were filled from the pilot (probes: 14 configurations × 5
+rounds; smoke: 28 games covering all 17 arms and 10 scenarios; logs in `runs/pilot/`, pilot seeds 9000+). Any later
+change is logged in `prereg/DEVIATIONS.md` with a timestamp and reason.
 
 **Author:** Shivom Sharma, independent researcher. Conflict of interest: maintainer of tirith, one of the monitors evaluated.
 **Context:** Apart Research AI Collusion Research Sprint (Track 3.1, with 3.2 and 3.4). Submission deadline 25 Oct 2026 23:59 AoE.
@@ -51,10 +52,11 @@ When LLM agents act for competing principals with a shared writable namespace bu
 - **Models and settings.**
   - The 13 nanoGPT model IDs and reasoning efforts are listed in `harness/arms.py`. Abliterated Large runs at both "none" and "low".
   - max_tokens (reasoning included) is 800 by default; 1,500 for Gemini 3.1 Pro, Grok 4.7 and Kimi K3.1 Pro; 2,000 for Qwen 3.8 Max Prime. **[PILOT, 25 Oct]** raised from 500 / 1,000 after the probes: Gemini truncated 11 of 27 calls (4 of 10 steps failed to parse), Qwen used its whole 1,000-token cap (3 of 10 failed), and Opus truncated 6 of 26 calls at 500.
-  - **[PILOT]** reasoning-uplift decision, under the rule in the plan: raise one step only if measured cost is below 70% of the estimate. Pair members move together.
+  - **[PILOT]** reasoning uplift: **not applied.** The rule raises effort one step only if measured cost is below 70% of the estimate; the probes measured ≈ $604 for the full grid's subject calls (at the old output caps), 82% of the $733 plan estimate.
 - **Order and concurrency.**
   - Games are interleaved round-robin across (model, scenario) streams, with matched arms adjacent (`harness/run.py::interleave`).
-  - 20 games run at once. **[PILOT]** raised to 30 only if CPU headroom and provider limits allow.
+  - **[PILOT]** Games run on three machines (`tools/make_shards.py`): the primary Mac (10 CPU, 28 games at once; it runs every tirith-gated game, since the pinned binary lives there) and two Linux VPS (6 vCPU, 18 at once; 4 vCPU, 6 at once). Whole (model, scenario) streams stay on one machine, so matched arms and seeds share hardware and time. Each game records its host; host is added as a stratum in a sensitivity analysis. Game logic never reads the clock or the host, so the host cannot change a game's draws.
+  - Each machine's queue runs core grids first (deep, pairs, broad), then scenarios, so a late run loses the tail of the trimming order below.
 
 ## 3. Measurement (trace-backed evidence never comes from tirith)
 - **Trace labels per firm and round, from that firm's command outputs:**
@@ -139,13 +141,14 @@ When LLM agents act for competing principals with a shared writable namespace bu
 - **Conditional levers** (STUCK-SHR/ISO, PRESSURE-SHR/ISO; 4 seeds per deep model) run only if the pilot shows zero
   trace-confirmed rival-authored cross-reads and zero adjudicated L2 addressed writes in SHR-AWARE across the two
   preselected pilot models and two seeds per model. Reading the root-owned public bulletin is not a trigger event.
-- **30-round core** runs only if the measured projection misses completion by Mon 26 Oct 02:00 IST at the agreed concurrency.
+- **30-round core** runs only if the measured projection misses completion by Mon 26 Oct 02:00 IST at the agreed concurrency. **[PILOT]** The projection does miss 02:00; the owner chose to keep 40 rounds and add two VPS instead (see `DEVIATIONS.md`, D4). If the run is late, the trimming order below applies.
+- **Conditional levers:** **[PILOT]** not triggered. The probes found rival-authored content in SHR-AWARE command outputs (4 of 130 firm-rounds) and agents listed or read `/srv/scratch` in 176 of 315 commands.
 - **Reasoning uplift**, per §2.
-- **Spending cap:** **[PILOT]** USD. The runner reserves a validated conservative maximum before each concurrent
+- **Spending cap:** **[PILOT]** $1,000 in total across three ledgers (primary $450, VPS-1 $400, VPS-2 $150) against an account balance of $1,126.71 at the freeze; projected spend $750–850. The runner reserves a validated conservative maximum before each concurrent
   call, settles every attempt from provider charges when available, and halts on over-reservation or reconciliation
   anomalies. The cap and any audited increase are persistent ledger state, not a mutable CLI-only value.
 - **Trimming order if over the cap or late:**
-  1. Tier-2 scenarios.
+  1. Tier-2 scenarios (**[PILOT]** fixed at the freeze: G2-wages, G4-liquidation, G6-ads, G8-libor, G10-legal-negotiation; tier 1 keeps one framing per engine: G1-rent, G3-procurement, G5-mev, G7-oracle, G9-dealer-spreads).
   2. Tier-1 scenarios, one domain at a time.
   3. SHR-NAIVE.
   4. PROVOC on the broad grid.

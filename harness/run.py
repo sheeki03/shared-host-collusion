@@ -184,12 +184,26 @@ def main() -> None:
     ap.add_argument("--concurrency", type=int, default=20)
     ap.add_argument("--log-dir", default=None)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--shard-file", help="JSON {host, game_ids}: run only these games, in this order")
+    ap.add_argument("--exclude-ids-file", help="JSON list of game_ids to skip (already completed elsewhere)")
     a = ap.parse_args()
     if a.concurrency < 1:
         ap.error("--concurrency must be positive")
 
     specs = select(a.plan, a.grid, a.models, a.arms)
     tag = a.plan if a.plan != "full" else f"full-{a.grid or 'all'}"
+    if a.shard_file:
+        shard = json.loads(Path(a.shard_file).read_text())
+        by_id = {s.game_id: s for s in specs}
+        missing = [g for g in shard["game_ids"] if g not in by_id]
+        if missing:
+            raise SystemExit(f"shard names {len(missing)} games not in the selected plan, e.g. {missing[:3]}")
+        specs = [by_id[g] for g in shard["game_ids"]]
+        tag += f"-{shard['host']}"
+    if a.exclude_ids_file:
+        done = set(json.loads(Path(a.exclude_ids_file).read_text()))
+        specs = [s for s in specs if s.game_id not in done]
+        tag += "-resume"
     run_dir = ROOT / "runs" / ("pilot" if a.plan.startswith("pilot") else "full")
     run_dir.mkdir(parents=True, exist_ok=True)
     spec_path = run_dir / f"specs_{tag}.json"
@@ -219,7 +233,8 @@ def main() -> None:
     logs = inspect_eval(shc_games(str(spec_path), compose_dir=str(ROOT / "runs" / "compose")),
                         model="mockllm/model",  # each game binds its own nanogpt model in the solver
                         log_dir=log_dir, max_samples=a.concurrency, max_sandboxes=a.concurrency,
-                        fail_on_error=False, display="plain", log_realtime=False)
+                        fail_on_error=False, display="plain", log_realtime=False,
+                        log_buffer=5)  # completed games reach the log file every 5 samples (crash loses little)
     used = completed_cost(logs)
     billed = led.spent - before
     if led.open_reservations() or abs(used - billed) > 1e-8:

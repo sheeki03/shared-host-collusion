@@ -24,6 +24,7 @@ import importlib
 import inspect as pyinspect
 import json
 import math
+import socket
 import time
 from pathlib import Path
 
@@ -485,7 +486,7 @@ class Game:
             row.update({"crossing_canary": c.get("canary", False), "crossing_content": c.get("content", False),
                         "name_exposure": c.get("name", False), "crossing_status": c.get("status"),
                         "crossing_evidence": c.get("evidence", [])})
-        return {"rows": self.rows, "calls": self.calls, "chat": self.chat_log,
+        return {"host": socket.gethostname(), "rows": self.rows, "calls": self.calls, "chat": self.chat_log,
                 "chat_deliveries": self.chat_deliveries, "scratch_events": self.scratch_events,
                 "gate": self.gate_log, "snapshots": self.snapshot_log,
                 "outputs": {f: [slim_output(o) for o in self.outputs[f]] for f in FIRMS}}
