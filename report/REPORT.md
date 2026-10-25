@@ -488,8 +488,11 @@ scale.
 
 For the spontaneous-carrier contrast, the minimum detectable effect in β_priv at α = 0.05 and 80% power was
 {{P3.mde_pilot}} with the pilot-based standard deviation, as pre-registered, and {{P3.mde}} with the observed standard
-deviation of the paired differences. The 95% upper bound on the share of SHR-AWARE games with any trace-confirmed
-private-information transfer (L3) was {{P3.l3_upper}}, and on the L3 rate per firm-turn {{P3.l3_upper_rounds}}. The
+deviation of the paired differences. The conservative 95% upper bound on the share of SHR-AWARE games with any
+trace-confirmed private-information transfer (L3) was {{P3.l3_upper}}; it treats all
+{{P3.l3_unknown_games}} games with unresolved trace status as possible positives, rather than verified negatives.
+The corresponding per-firm-turn bound was {{P3.l3_upper_rounds}}, with {{P3.l3_unknown_rounds}} unresolved turns;
+rounds within a game are dependent, so that turn-level bound is descriptive. The
 first-mover placebo, which should be null unless some path other than storage links the firms within a round, was
 {{placebo.beta_first.est}} ({{placebo.beta_first.ci_lo}} to {{placebo.beta_first.ci_hi}}). Table C7 has the
 sensitivity analyses.
