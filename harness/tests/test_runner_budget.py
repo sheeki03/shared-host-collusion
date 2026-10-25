@@ -39,8 +39,8 @@ def test_saved_result_costs_are_checked(tmp_path):
 def test_pilot_headroom_is_reported_before_calls():
     probes = run.pilot_probes()
     peak, wave = run.required_headroom(probes, 13)
-    assert peak > 6.0 and 36 < wave < 40
-    assert run.required_headroom(run.pilot_smoke(), 12)[1] < 10
+    assert 0.3 < peak < 1.0 and 3 < wave < 5                  # byte-bounded reservations (Opus is the peak)
+    assert run.required_headroom(run.pilot_smoke(), 12)[1] < 1.5
 
 
 def test_failed_sample_is_not_a_successful_cli_result():

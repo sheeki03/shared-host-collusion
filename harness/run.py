@@ -57,12 +57,13 @@ def required_headroom(specs: list[GameSpec], concurrency: int) -> tuple[float, f
 
     prices = load_prices()
     always = {"x-ai/grok-4.7", "moonshotai/kimi-k3.1-pro", "qwen/qwen3.8-max-prime"}
-    monitor = estimate_max_cost(prices["z-ai/glm-5.3"], 0, 80)
+    # 64 KB / 12 messages bounds any game prompt (history capped at 5 rounds, notes at 2,000 chars, outputs 2,000).
+    monitor = estimate_max_cost(prices["z-ai/glm-5.3"], 8_000, 80, 2)
     reservations = []
     for s in specs:
         if s.model_id not in prices:
             raise ValueError(f"no price bound for {s.model_id}")
-        subject = estimate_max_cost(prices[s.model_id], 0, 1000 if s.model_id in always else 500)
+        subject = estimate_max_cost(prices[s.model_id], 65_536, 1000 if s.model_id in always else 500, 12)
         reservations.append(max(subject, monitor))
     if not reservations:
         raise ValueError("the selected plan has no games")

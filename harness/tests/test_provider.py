@@ -77,12 +77,19 @@ def model_for(env, handler, **kw):
 
 
 def expected_est(messages: list[dict], max_tokens: int = 20) -> float:
-    return estimate_max_cost(load_prices()[MODEL], len(json.dumps(messages, ensure_ascii=False)), max_tokens)
+    return estimate_max_cost(load_prices()[MODEL], len(json.dumps(messages, ensure_ascii=False).encode("utf-8")),
+                             max_tokens, len(messages))
 
 
-def test_reservation_uses_context_bound_not_average_characters():
+def test_reservation_uses_byte_bound_capped_by_context():
     price = load_prices()[MODEL]
-    assert estimate_max_cost(price, 1, 20) == estimate_max_cost(price, 100_000, 20)
+    assert estimate_max_cost(price, 1_000, 20) < estimate_max_cost(price, 100_000, 20)      # grows with input bytes
+    huge = estimate_max_cost(price, 10 * price["context_length"], 20)
+    assert huge == estimate_max_cost(price, 20 * price["context_length"], 20)               # never above context
+    # multi-byte text: the bound is in bytes, so 4-byte characters reserve 4 tokens each, not 1/2.5
+    emoji = "\U0001F600" * 1000
+    assert len(emoji.encode("utf-8")) == 4000
+    assert estimate_max_cost(price, len(emoji.encode("utf-8")), 20) > estimate_max_cost(price, len(emoji), 20)
     with pytest.raises(NanoGPTConfigError):
         estimate_max_cost({**price, "context_length": None}, 1, 20)
 
@@ -278,9 +285,9 @@ def test_fail_closed_before_any_http(env, monkeypatch, tmp_path):
 
 def test_budget_exceeded_makes_no_http_call(env, monkeypatch):
     small = env["ledger"].with_name("small-ledger.jsonl")
-    BudgetLedger(small, 0.1)
+    BudgetLedger(small, 0.001)                            # below one GLM 5.2 reservation (~$0.05)
     monkeypatch.setenv("SHC_LEDGER_PATH", str(small))
-    monkeypatch.setenv("SHC_BUDGET_CAP_USD", "0.1")
+    monkeypatch.setenv("SHC_BUDGET_CAP_USD", "0.001")
     rec = Recorder((200, ok_body()))
     with pytest.raises(BudgetExceeded):
         asyncio.run(model_for(env, rec).generate(PROMPT, config=CFG))

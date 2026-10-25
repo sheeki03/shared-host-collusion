@@ -382,7 +382,8 @@ def test_provider_cap_holds_under_40_concurrent_calls(tmp_path, monkeypatch, key
 
     msgs = [ChatMessageUser(content="concurrency probe")]
     wire = [{"role": "user", "content": "concurrency probe"}]
-    est = estimate_max_cost(load_prices()[MODEL], len(json.dumps(wire, ensure_ascii=False)), 50)
+    est = estimate_max_cost(load_prices()[MODEL], len(json.dumps(wire, ensure_ascii=False).encode("utf-8")), 50,
+                            len(wire))
     cap = est * 7.5                                        # admits exactly 7 attempts when each settles at est_max
     path = tmp_path / "ledger.jsonl"
     BudgetLedger(path, cap)

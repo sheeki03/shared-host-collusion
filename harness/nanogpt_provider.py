@@ -86,6 +86,9 @@ MODELS_DUMP = "/private/tmp/nanogpt-models.json"
 ENV_LEDGER, ENV_CAP = "SHC_LEDGER_PATH", "SHC_BUDGET_CAP_USD"
 
 SAFETY = 1.2
+TEMPLATE_TOKENS_PER_MESSAGE = 32
+PREAMBLE_TOKENS = 2048
+REASONING_ALLOWANCE = 8192
 MAX_RETRIES = 2
 DEFAULT_MAX_TOKENS = 4096        # sent when the config sets none, so the reservation always bounds the output
 DEFAULT_READ_TIMEOUT = 300.0     # seconds per attempt (model arg request_timeout_s)
@@ -135,22 +138,31 @@ def load_prices(path: str | os.PathLike = PRICES_PATH) -> dict[str, dict]:
         return json.load(f)["models"]
 
 
-def estimate_max_cost(price: dict, input_chars: int, max_tokens: int) -> float:
-    """Conservative USD reservation under pinned prices and the provider-advertised context/output limits.
+def input_token_bound(input_bytes: int, n_messages: int) -> int:
+    """Upper bound on billed input tokens: every tokenizer token encodes at least one UTF-8 byte of the request, plus
+    chat-template special tokens per message and a fixed allowance for provider-side preamble."""
+    return int(input_bytes) + TEMPLATE_TOKENS_PER_MESSAGE * max(int(n_messages), 1) + PREAMBLE_TOKENS
 
-    ``input_chars`` is retained for call compatibility and validation; it is never used as a token-count bound.
-    A UTF-8 character count divided by a tokenizer average is not an upper bound for adversarial input.
+
+def estimate_max_cost(price: dict, input_bytes: int, max_tokens: int, n_messages: int = 1) -> float:
+    """Conservative USD reservation under pinned (highest-tier) prices.
+
+    Input: `input_token_bound` (UTF-8 bytes of the wire messages, never more than the advertised context). A
+    characters-per-token average is not a bound for adversarial text, but one token always covers at least one byte.
+    Output: max_tokens plus REASONING_ALLOWANCE for reasoning a provider may bill beyond max_tokens.
     """
     context = price.get("context_length")
     max_output = price.get("max_output_tokens")
     if isinstance(context, bool) or not isinstance(context, int) or context <= 0:
         raise NanoGPTConfigError("model price entry needs a positive advertised context_length")
-    if input_chars < 0 or max_tokens <= 0 or (max_output is not None and max_tokens > max_output):
+    if input_bytes < 0 or max_tokens <= 0 or (max_output is not None and max_tokens > max_output):
         raise NanoGPTConfigError("input length or output cap is invalid for the priced model")
     if not all(isinstance(price.get(k), (int, float)) and math.isfinite(price[k]) and price[k] >= 0
                for k in ("in_per_m", "out_per_m")):
         raise NanoGPTConfigError("model price entry has invalid token prices")
-    return SAFETY * (context * price["in_per_m"] + max_tokens * price["out_per_m"]) / 1e6
+    in_tokens = min(context, input_token_bound(input_bytes, n_messages))
+    out_tokens = max_tokens + REASONING_ALLOWANCE
+    return SAFETY * (in_tokens * price["in_per_m"] + out_tokens * price["out_per_m"]) / 1e6
 
 
 def build_price_table(source: str = MODELS_DUMP, model_ids: tuple[str, ...] = ROSTER) -> dict:
@@ -199,7 +211,8 @@ def build_price_table(source: str = MODELS_DUMP, model_ids: tuple[str, ...] = RO
                                "input); out_per_m = max(pricing.completion, list output, list output above "
                                "threshold). catalog_* = the catalogue `pricing` field (actual costs observed ~10% "
                                "below it in the Step 2 probe).",
-            "est_formula": "1.2 * (advertised_context_length * in_per_m + max_tokens * out_per_m) / 1e6",
+            "est_formula": "1.2 * (min(context, utf8_bytes + 32*messages + 2048) * in_per_m + (max_tokens + 8192) "
+                           "* out_per_m) / 1e6",
         },
         "models": models,
     }
@@ -375,8 +388,8 @@ class NanoGPTAPI(ModelAPI):
             body["reasoning_effort"] = config.reasoning_effort
         if config.seed is not None:
             body["seed"] = config.seed
-        input_chars = len(json.dumps(messages, ensure_ascii=False))
-        est = estimate_max_cost(self._price, input_chars, max_tokens)
+        input_bytes = len(json.dumps(messages, ensure_ascii=False).encode("utf-8"))
+        est = estimate_max_cost(self._price, input_bytes, max_tokens, len(messages))
         meta = {"model": self.model_name, "sample_id": _active_sample_id(), "call_kind": _CALL_KIND.get()}
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         timeout = httpx.Timeout(self._request_timeout, connect=CONNECT_TIMEOUT)
