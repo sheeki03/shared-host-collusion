@@ -4,6 +4,7 @@ __pycache__/
 .DS_Store
 # raw run logs stay local until curated
 runs/
+runs-e2e.log
 # binaries are not committed; their sha256 files are
 bin/*
 !bin/*.sha256
