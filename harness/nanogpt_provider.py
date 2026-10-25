@@ -22,6 +22,8 @@ Each HTTP attempt
         settle at est_max, flagged.
       - The connection was never made (httpx.ConnectError, ConnectTimeout, PoolTimeout): release.
     At most 2 retries (on 429, 5xx and transport errors), each with a new reservation. No retry on other 4xx.
+    Attempts that never connected (released, free) have their own budget of MAX_UNSENT_RETRIES with growing waits, so
+    a short network drop does not kill a game (added 26 Oct after drops on the instabox hosts; deviation D13).
     Inspect's own retry is switched off (should_retry -> False), so these are the only retries. Inspect still retries
     AttemptTimeoutError by itself, so GenerateConfig.attempt_timeout is refused; use the model arg request_timeout_s.
 
@@ -90,6 +92,7 @@ TEMPLATE_TOKENS_PER_MESSAGE = 32
 PREAMBLE_TOKENS = 2048
 REASONING_ALLOWANCE = 8192
 MAX_RETRIES = 2
+MAX_UNSENT_RETRIES = 8   # never-connected attempts (released, free): rides out a network drop of ~3 min at backoff 2 s
 DEFAULT_MAX_TOKENS = 4096        # sent when the config sets none, so the reservation always bounds the output
 DEFAULT_READ_TIMEOUT = 300.0     # seconds per attempt (model arg request_timeout_s)
 CONNECT_TIMEOUT = 15.0
@@ -398,10 +401,16 @@ class NanoGPTAPI(ModelAPI):
         last_error: Exception | None = None
         last_payload: Any = None
         last_resp: httpx.Response | None = None
-        for attempt in range(self._retries + 1):
-            if attempt:
-                delay = _retry_after(last_resp)
-                await anyio.sleep(self._backoff * 3 ** (attempt - 1) if delay is None else delay)
+        billed = 0          # attempts that may have reached the provider (each may be charged; at most retries + 1)
+        unsent = 0          # attempts that never connected (released at zero cost; their own, larger budget)
+        prev_unsent = False
+        while billed <= self._retries:
+            if billed or unsent:
+                if prev_unsent:  # a network drop: wait it out (free), 2.5*b, 5*b, 10*b ... capped at 30*b
+                    await anyio.sleep(min(30.0, 2.5 * 2 ** (unsent - 1)) * self._backoff)
+                else:
+                    delay = _retry_after(last_resp)
+                    await anyio.sleep(self._backoff * 3 ** (billed - 1) if delay is None else delay)
             headers = {"Authorization": f"Bearer {self._api_key()}", "Content-Type": "application/json"}
             token = await self.ledger.reserve(est, meta)
             t0 = time.monotonic()
@@ -412,17 +421,25 @@ class NanoGPTAPI(ModelAPI):
                 attempts.append({"reservation_id": token, "outcome": "released", "settled_usd": 0.0,
                                  "status": None, "error": type(ex).__name__})
                 last_error, last_resp = ex, None
+                unsent += 1
+                prev_unsent = True
+                if unsent > MAX_UNSENT_RETRIES:
+                    break
                 continue
             except httpx.TransportError as ex:
                 settled = await self._settle(token, None, f"transport_error:{type(ex).__name__}")
                 attempts.append({"reservation_id": token, "outcome": "transport_error", "settled_usd": settled,
                                  "status": None, "error": type(ex).__name__})
                 last_error, last_resp = ex, None
+                billed += 1
+                prev_unsent = False
                 continue
             except BaseException as ex:  # cancellation or an unexpected error: the request may have been sent
                 await self._settle(token, None, f"aborted:{type(ex).__name__}")
                 raise
             elapsed = time.monotonic() - t0
+            billed += 1
+            prev_unsent = False
             try:
                 payload: Any = resp.json()
             except ValueError:

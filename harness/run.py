@@ -234,7 +234,8 @@ def main() -> None:
                         model="mockllm/model",  # each game binds its own nanogpt model in the solver
                         log_dir=log_dir, max_samples=a.concurrency, max_sandboxes=a.concurrency,
                         fail_on_error=False, display="plain", log_realtime=False,
-                        log_buffer=5)  # completed games reach the log file every 5 samples (crash loses little)
+                        log_buffer=5,  # completed games reach the log file every 5 samples (crash loses little)
+                        retry_on_error=2)  # a game that errors (e.g. network drop) is replayed from round 1, same seed (D13)
     used = completed_cost(logs)
     billed = led.spent - before
     if led.open_reservations() or abs(used - billed) > 1e-8:

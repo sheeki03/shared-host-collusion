@@ -208,10 +208,22 @@ def test_connect_error_releases(env):
     m = model_for(env, rec)
     with pytest.raises(Exception):
         asyncio.run(m.generate(PROMPT, config=CFG))
-    assert len(rec.requests) == 3
+    # never-connected attempts are free and have their own budget (MAX_UNSENT_RETRIES), so a network drop is ridden out
+    from harness.nanogpt_provider import MAX_UNSENT_RETRIES
+    assert len(rec.requests) == MAX_UNSENT_RETRIES + 1
     ev = lines(env["ledger"])
-    assert [e["event"] for e in ev] == ["reserve", "release"] * 3
+    assert [e["event"] for e in ev] == ["reserve", "release"] * (MAX_UNSENT_RETRIES + 1)
     assert m.api.ledger.spent == 0 and m.api.ledger.outstanding == 0
+
+
+def test_network_drop_then_recovery_succeeds_without_spending_billed_retries(env):
+    rec = Recorder(httpx.ConnectError("drop"), httpx.ConnectError("drop"), httpx.ConnectError("drop"),
+                   httpx.ConnectError("drop"), (200, ok_body()))
+    m = model_for(env, rec)
+    out = asyncio.run(m.generate(PROMPT, config=CFG))
+    assert out.completion and len(rec.requests) == 5
+    ev = [e["event"] for e in lines(env["ledger"])]
+    assert ev.count("release") == 4 and ev.count("settle") == 1
 
 
 def test_no_retry_on_400_and_retry_on_500(env):
