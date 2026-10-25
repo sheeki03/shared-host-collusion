@@ -227,15 +227,36 @@ def _usage_cost(payload: Any) -> float | None:
     """usage.cost when it is a finite non-negative USD number, else None (settled at est_max)."""
     if not isinstance(payload, dict):
         return None
-    usage = payload.get("usage")
-    if not isinstance(usage, dict):
+    for src in (payload.get("usage"), payload.get("x_nanogpt_pricing")):
+        if not isinstance(src, dict) or src.get("isEstimate") is True:   # an estimate is not a settled charge
+            continue
+        cost = src.get("cost")
+        if isinstance(cost, bool) or not isinstance(cost, (int, float)) or not math.isfinite(cost) or cost < 0:
+            continue
+        if src.get("currency") not in (None, "USD"):
+            continue
+        return float(cost)
+    return None
+
+
+def _estimated_charge(payload: Any, price: dict, est_max: float) -> float | None:
+    """Conservative settle for a 200 whose final cost is not yet known (nanoGPT marks it x_nanogpt_pricing.isEstimate).
+
+    The larger of nanoGPT's own estimate and a token bound at the pinned (highest-tier) prices, never above est_max.
+    None (settle at est_max) when the token counts are missing.
+    """
+    if not isinstance(payload, dict) or not isinstance(payload.get("usage"), dict):
         return None
-    cost = usage.get("cost")
-    if isinstance(cost, bool) or not isinstance(cost, (int, float)) or not math.isfinite(cost) or cost < 0:
+    usage = payload["usage"]
+    inp, out, rsn = _int(usage.get("prompt_tokens")), _int(usage.get("completion_tokens")), _int(usage.get("reasoning_tokens"))
+    if inp is None or out is None or inp < 0 or out < 0:
         return None
-    if usage.get("currency") not in (None, "USD"):
-        return None
-    return float(cost)
+    bound = SAFETY * (inp * price["in_per_m"] + (out + max(rsn or 0, 0)) * price["out_per_m"]) / 1e6
+    pricing = payload.get("x_nanogpt_pricing")
+    provider = pricing.get("cost") if isinstance(pricing, dict) and pricing.get("currency") in (None, "USD") else None
+    if isinstance(provider, bool) or not isinstance(provider, (int, float)) or not math.isfinite(provider) or provider < 0:
+        provider = 0.0
+    return float(min(max(bound, provider), est_max))
 
 
 def _int(x: Any) -> int | None:
@@ -344,8 +365,10 @@ class NanoGPTAPI(ModelAPI):
             raise NanoGPTConfigError("do not set attempt_timeout with the nanogpt provider; use -M request_timeout_s")
         messages = _wire_messages(input)
         max_tokens = int(config.max_tokens or DEFAULT_MAX_TOKENS)
+        # Since 25 Oct 2026 nanoGPT returns usage.cost only when asked (usage.include); without it some models return
+        # no cost at all and every call would settle at est_max.
         body: dict[str, Any] = {"model": self.model_name, "messages": messages, "max_tokens": max_tokens,
-                                "stream": False}
+                                "stream": False, "usage": {"include": True}}
         if config.temperature is not None:
             body["temperature"] = config.temperature
         if config.reasoning_effort is not None:
@@ -392,7 +415,13 @@ class NanoGPTAPI(ModelAPI):
             except ValueError:
                 payload = None
             cost = _usage_cost(payload)
-            reason = None if cost is not None else f"missing_cost:http_{resp.status_code}"
+            cost_source = "usage.cost"
+            reason = None
+            if cost is None:
+                cost = _estimated_charge(payload, self._price, est) if resp.status_code == 200 else None
+                cost_source = "provider_estimate" if cost is not None else "est_max"
+                reason = (f"provider_estimate:http_{resp.status_code}" if cost is not None
+                          else f"missing_cost:http_{resp.status_code}")
             settled = await self._settle(token, cost, reason)
             choices = payload.get("choices") if isinstance(payload, dict) else None
             ok = resp.status_code == 200 and isinstance(choices, list) and len(choices) > 0
@@ -400,7 +429,7 @@ class NanoGPTAPI(ModelAPI):
                              "status": resp.status_code})
             if ok:
                 output = self._output(payload, token=token, settled=settled, est=est,
-                                      cost_source="usage.cost" if cost is not None else "est_max", attempts=attempts)
+                                      cost_source=cost_source, attempts=attempts)
                 return output, ModelCall.create(request=body, response=payload, time=elapsed)
             last_error = NanoGPTHTTPError(resp.status_code, resp.text)
             last_payload, last_resp = payload, resp

@@ -394,7 +394,9 @@ def test_provider_cap_holds_under_40_concurrent_calls(tmp_path, monkeypatch, key
     async def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
         await asyncio.sleep(0.02)                         # keep many calls in flight at once
-        return httpx.Response(200, json=_ok_body(None))  # no usage.cost -> settled at est_max (fail closed)
+        body = _ok_body(None)
+        body["usage"] = {}                                # no cost and no token counts -> settled at est_max
+        return httpx.Response(200, json=body)
 
     import harness.nanogpt_provider  # noqa: F401
     from inspect_ai.model import get_model

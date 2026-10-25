@@ -131,8 +131,19 @@ def test_model_call_log_has_no_key(env):
     assert out.metadata["cost_usd"] == 1.2e-05
 
 
-def test_missing_cost_settles_at_est_max(env):
+def test_missing_cost_with_tokens_settles_at_conservative_estimate(env):
     m = model_for(env, Recorder((200, ok_body(cost=None))))
+    out = asyncio.run(m.generate(PROMPT, config=CFG))
+    ev = lines(env["ledger"])
+    assert [e["event"] for e in ev] == ["reserve", "settle"]
+    assert out.metadata["cost_source"] == "provider_estimate"
+    assert 0 < out.metadata["cost_usd"] == ev[1]["actual"] < ev[0]["est_max"]
+
+
+def test_missing_cost_and_tokens_settles_at_est_max(env):
+    body = ok_body(cost=None)
+    body["usage"] = {}
+    m = model_for(env, Recorder((200, body)))
     out = asyncio.run(m.generate(PROMPT, config=CFG))
     ev = lines(env["ledger"])
     assert [e["event"] for e in ev] == ["reserve", "settle", "flag"]
@@ -326,7 +337,7 @@ def test_real_calls_cost_matches_ledger(tmp_path, monkeypatch):
     settles = {e["id"]: e for e in ev if e["event"] == "settle"}
     for out in outs:
         md = out.metadata
-        assert md["cost_source"] == "usage.cost", md
+        assert md["cost_source"] in ("usage.cost", "provider_estimate"), md
         assert settles[md["reservation_id"]]["actual"] == md["cost_usd"]
         assert 0 < md["cost_usd"] < md["est_max_usd"]
     led = BudgetLedger(path, 2.0)
@@ -339,3 +350,19 @@ def test_real_calls_cost_matches_ledger(tmp_path, monkeypatch):
                                                                     o.usage.reasoning_tokens]} for o in outs]
     print("\nREAL-CALL SUMMARY", json.dumps({"ledger_spent": led.spent, "calls": summary}, indent=1))
     print("LEDGER LINES", json.dumps(ev, indent=1))
+
+
+def test_estimated_charge_is_conservative_and_bounded():
+    from harness.nanogpt_provider import _estimated_charge, _usage_cost
+    price = {"in_per_m": 1.0, "out_per_m": 4.0}
+    est = {"usage": {"prompt_tokens": 1000, "completion_tokens": 100, "reasoning_tokens": 50},
+           "x_nanogpt_pricing": {"cost": 1e-4, "currency": "USD", "isEstimate": True}}
+    assert _usage_cost(est) is None                               # an estimate is never taken as the settled charge
+    bound = 1.2 * (1000 * 1.0 + 150 * 4.0) / 1e6
+    assert _estimated_charge(est, price, 1.0) == pytest.approx(max(bound, 1e-4))
+    est["x_nanogpt_pricing"]["cost"] = 0.5                        # a large provider estimate wins over the token bound
+    assert _estimated_charge(est, price, 1.0) == pytest.approx(0.5)
+    assert _estimated_charge(est, price, 0.2) == pytest.approx(0.2)   # never above est_max
+    assert _estimated_charge({"usage": {}}, price, 1.0) is None       # no token counts: settle at est_max
+    exact = {"usage": {"prompt_tokens": 5}, "x_nanogpt_pricing": {"cost": 2e-6, "currency": "USD"}}
+    assert _usage_cost(exact) == pytest.approx(2e-6)              # final pricing block (no isEstimate) is exact
