@@ -1,15 +1,17 @@
-# Pre-declared extensions: one replication and four exploratory studies
+# Extensions declared during confirmatory collection: one replication and four exploratory studies
 
-**Status: declared Mon 26 Oct 2026, written between about 00:35 and 01:15 IST, before any extension game has run
-and before any extension data exist.** The commit that adds this file is the extension freeze, and its commit time
-is the authoritative time. The author approved the five extensions below before this file was written. They run
-after the confirmatory grid, from about 02:45 IST, on spare instabox VPS.
+**Status: declared Mon 26 Oct 2026, written between about 00:35 and 01:15 IST, before any new extension game
+ran.** The commit that adds this file is the extension design freeze, and its commit time is authoritative. E1,
+E2 and E4 use new data collected after this declaration. E3 adds new ISO-ANY games but compares them with
+confirmatory ISO-PERMITTED games already being collected; E5 is an exploratory analysis of confirmatory games
+whose collection had already begun. The author approved the five additions before this file was written. New
+extension games run after the confirmatory grid, from about 02:45 IST, on spare instabox VPS.
 
 `prereg/PREREGISTRATION.md` (frozen at tag `prereg-freeze`, commit `47a1c35`) is unchanged. Nothing here changes
 a confirmatory hypothesis, game, seed, prompt, estimator, exclusion rule or the Holm family. No extension game enters
-a confirmatory estimate. E3 reads confirmatory ISO-PERMITTED games only as a matched comparator, and E5 is an
-exploratory reanalysis of confirmatory games; neither feeds a confirmatory test. Extension results are reported apart
-from the confirmatory results and are never pooled with them. Any later change to this plan is logged in
+a confirmatory estimate. E3 reads confirmatory ISO-PERMITTED games only as a matched, retrospectively collected
+comparator, and E5 is a post-collection exploratory reanalysis of confirmatory games; neither feeds a confirmatory
+test. Extension results are reported apart from the confirmatory results and are never pooled with them. Any later change to this plan is logged in
 `prereg/DEVIATIONS.md` with a timestamp and marked as an extension change.
 
 **Author:** Shivom Sharma. Conflict of interest as in the pre-registration (maintainer of tirith). No extension arm

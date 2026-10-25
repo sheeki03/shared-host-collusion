@@ -1,11 +1,15 @@
-# Pre-declared exploratory additions A1–A4
+# Exploratory additions specified during confirmatory collection (A1–A4)
 
-**Status: declared Mon 26 Oct 2026. First written between about 00:50 and 01:10 IST, then revised after an
-adversarial review between about 01:15 and 01:50 IST. Both happened before any of the four was run on a
-confirmatory log and before any confirmatory result had been computed.** The declaration is the commit that adds this
-file, together with the module docstrings it points to, and its commit time is the authoritative time. The author
-approved the four additions before this file was written. Until then they were developed only on synthetic data
-(their tests) and on the pilot cohort (`runs/pilot/`, seeds 9000+).
+**Status: declared Mon 26 Oct 2026, after confirmatory game collection began.** First written between about
+00:50 and 01:10 IST. An adversarial review ran between about 01:15 and 01:50; the declaration commit at 01:40
+contains the revisions made by then, and no later edit to this file is recorded. The author reports
+that neither version was run on confirmatory logs before the declaration commit and that no confirmatory result
+had been computed for these questions; the commit time alone cannot verify what had been inspected. A1–A3 are
+therefore post-collection exploratory specifications for a dataset whose collection was underway, not confirmatory
+pre-registration.
+A4 specifies new scripted calibration data before its run. The declaration is the commit that adds this file and
+the referenced module docstrings; its commit time is authoritative. The author approved the additions before this
+file was written and reports developing them on synthetic tests and pilot games (`runs/pilot/`, seeds 9000+).
 
 `prereg/PREREGISTRATION.md` (frozen at tag `prereg-freeze`) is unchanged, and so is `prereg/EXTENSIONS.md`. These
 additions change no confirmatory hypothesis, game, seed, prompt, estimator, exclusion rule or Holm family. They are
