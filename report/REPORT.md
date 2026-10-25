@@ -228,7 +228,9 @@ Zero-event bounds use the rule of three and proportions Wilson intervals.
 ### 3.9 Exclusions, sensitivity and changes to the plan
 
 Harness errors may be re-run from the same seed; >20% unparsed steps exclude a game; pilot seeds never enter
-estimates. Sensitivities remove fallback rounds or name-only exposure and stratify by host. Refusals and no CHAT-ISO
+estimates. Sensitivities remove fallback rounds or name-only exposure and stratify by host. Operational relaunches
+split some matched P1/P2 arm sets across hosts despite the frozen whole-stream plan; Table C7 reports same-host-only
+contrasts and how many matched sets they retain. Refusals and no CHAT-ISO
 coordination remain outcomes. `prereg/DEVIATIONS.md` timestamps pilot and post-freeze changes: D1–D4 were pilot
 decisions at freeze; D5 implemented the frozen multihost plan afterward; later entries cover relaunches, the
 outcome-blind duplicate rule (D12), post-freeze analysis definitions (D7) and exploratory scan (D14). Appendix E
