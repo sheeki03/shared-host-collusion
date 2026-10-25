@@ -1,13 +1,15 @@
 """Run games: pilot, confirmatory grid, or a subset.
 
 Usage examples (from repo root, venv python):
-  .venv/bin/python -m harness.run --plan pilot-probes --cap 5 --concurrency 13
-  .venv/bin/python -m harness.run --plan pilot-smoke  --cap 10 --concurrency 12
-  .venv/bin/python -m harness.run --plan full --grid deep --cap 400 --concurrency 20
+  .venv/bin/python -m harness.run --plan pilot-probes --cap 40 --concurrency 13 --init-ledger
+  .venv/bin/python -m harness.run --plan pilot-smoke  --cap 40 --concurrency 12
+  .venv/bin/python -m harness.run --plan full --grid deep --cap 400 --previous-cap 40 \
+    --raise-cap-reason 'owner-approved post-pilot funding' --concurrency 20
 
-Budget: every subject/monitor call is reserved against a global append-only ledger before it is sent and settled
-with the provider's exact cost (harness/ledger.py). The cap is enforced across all concurrent games; a call that
-would exceed it raises and the game errors (fail closed). Pilot seeds (9000+) never enter confirmatory estimates.
+Budget: every subject/monitor call reserves the full advertised input-context cost plus bounded output under the
+pinned price table before sending, then settles the provider-reported charge. This is a conservative local admission
+limit conditional on provider context/prices; an above-reservation charge is recorded and halts future calls.
+Pilot seeds (9000+) never enter confirmatory estimates. A ledger is initialized once and resumed explicitly.
 """
 from __future__ import annotations
 
@@ -18,10 +20,86 @@ import random
 from collections import defaultdict
 from pathlib import Path
 
-from harness.arms import (ARMS, BROAD, CORE_ROUNDS, DEEP, PAIRS, PILOT_SEED_BASE, SCENARIO_MODELS, SCENARIOS, GameSpec,
+from harness.arms import (ARMS, BROAD, CORE_ROUNDS, DEEP, PAIRS, PILOT_SEED_BASE, SCENARIOS, GameSpec,
                           full_design)
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def open_run_ledger(path: str, cap: float, *, init: bool = False, previous_cap: float | None = None,
+                    raise_reason: str | None = None):
+    """Open a paid-run ledger without silently resetting it or changing its persisted cap."""
+    from harness.ledger import BudgetLedger
+
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if init:
+        if previous_cap is not None or raise_reason:
+            raise ValueError("--init-ledger cannot be combined with a cap increase")
+        # O_EXCL makes an accidental second initialization fail even if another runner starts at the same time.
+        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        os.close(fd)
+        return BudgetLedger(target, cap, create=True)
+    if raise_reason:
+        if previous_cap is None:
+            raise ValueError("an audited cap increase needs --previous-cap")
+        led = BudgetLedger(target, previous_cap, create=False)
+        led.raise_cap(cap, reason=raise_reason)
+        return led
+    if previous_cap is not None:
+        raise ValueError("--previous-cap requires --raise-cap-reason")
+    return BudgetLedger(target, cap, create=False)
+
+
+def required_headroom(specs: list[GameSpec], concurrency: int) -> tuple[float, float]:
+    """Return largest per-call reservation and one-wave headroom at the requested game concurrency."""
+    from harness.nanogpt_provider import estimate_max_cost, load_prices
+
+    prices = load_prices()
+    always = {"x-ai/grok-4.7", "moonshotai/kimi-k3.1-pro", "qwen/qwen3.8-max-prime"}
+    monitor = estimate_max_cost(prices["z-ai/glm-5.3"], 0, 80)
+    reservations = []
+    for s in specs:
+        if s.model_id not in prices:
+            raise ValueError(f"no price bound for {s.model_id}")
+        subject = estimate_max_cost(prices[s.model_id], 0, 1000 if s.model_id in always else 500)
+        reservations.append(max(subject, monitor))
+    if not reservations:
+        raise ValueError("the selected plan has no games")
+    reservations.sort(reverse=True)
+    return reservations[0], sum(reservations[:concurrency])
+
+
+def completed_cost(logs) -> float:
+    """Validate every sample and sum all provider attempts from saved per-game metadata."""
+    from inspect_ai.log import read_eval_log
+
+    total = 0.0
+    errors = []
+    for log in logs:
+        if log.status != "success" or log.error:
+            errors.append(f"eval status {log.status}: {str(log.error)[:150]}")
+        samples = log.samples or read_eval_log(log.location).samples or []
+        if not samples:
+            errors.append(f"no saved samples in {log.location}")
+        for sample in samples:
+            if sample.error:
+                errors.append(f"sample {sample.id}: {str(sample.error.message)[:150]}")
+                continue
+            result = (sample.metadata or {}).get("result")
+            if not isinstance(result, dict) or not isinstance(result.get("calls"), list):
+                errors.append(f"sample {sample.id}: missing game calls/results")
+                continue
+            for call in result["calls"]:
+                cost = call.get("total_cost_usd")
+                if cost is None:
+                    errors.append(f"sample {sample.id}: call missing total_cost_usd")
+                else:
+                    total += float(cost)
+    if errors:
+        raise RuntimeError("incomplete Inspect evaluation; no result may be reported as complete:\n" +
+                           "\n".join(errors[:20]))
+    return total
 
 
 def interleave(specs: list[GameSpec], seed: int = 0) -> list[GameSpec]:
@@ -99,10 +177,15 @@ def main() -> None:
     ap.add_argument("--arms", nargs="*")
     ap.add_argument("--cap", type=float, required=True, help="hard USD cap for this ledger")
     ap.add_argument("--ledger", default=str(ROOT / "runs" / "ledger.jsonl"))
+    ap.add_argument("--init-ledger", action="store_true", help="create a new ledger once; never resets existing spend")
+    ap.add_argument("--previous-cap", type=float, help="recorded cap before an audited increase")
+    ap.add_argument("--raise-cap-reason", help="audited reason for increasing --previous-cap to --cap")
     ap.add_argument("--concurrency", type=int, default=20)
     ap.add_argument("--log-dir", default=None)
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
+    if a.concurrency < 1:
+        ap.error("--concurrency must be positive")
 
     specs = select(a.plan, a.grid, a.models, a.arms)
     tag = a.plan if a.plan != "full" else f"full-{a.grid or 'all'}"
@@ -114,6 +197,16 @@ def main() -> None:
     if a.dry_run:
         return
 
+    led = open_run_ledger(a.ledger, a.cap, init=a.init_ledger, previous_cap=a.previous_cap,
+                          raise_reason=a.raise_cap_reason)
+    peak, wave = required_headroom(specs, a.concurrency)
+    print(f"ledger {a.ledger}: cap ${led.cap_usd:.2f}, spent ${led.spent:.4f}, "
+          f"outstanding ${led.outstanding:.4f}, largest call reservation ${peak:.4f}, "
+          f"one-wave headroom ${wave:.4f}")
+    if led.remaining < wave:
+        raise SystemExit(f"available budget ${led.remaining:.4f} cannot reserve the requested "
+                         f"{a.concurrency}-game wave (${wave:.4f}); lower concurrency or explicitly increase cap")
+    before = led.spent
     os.environ["SHC_LEDGER_PATH"] = a.ledger
     os.environ["SHC_BUDGET_CAP_USD"] = str(a.cap)
     from inspect_ai import eval as inspect_eval  # noqa: WPS433
@@ -122,10 +215,16 @@ def main() -> None:
     import harness.nanogpt_provider  # noqa: F401,WPS433  (fail early if the provider is missing)
 
     log_dir = a.log_dir or str(run_dir / "logs")
-    inspect_eval(shc_games(str(spec_path), compose_dir=str(ROOT / "runs" / "compose")),
-                 model="mockllm/model",  # placeholder: each game binds its own nanogpt model in the solver
-                 log_dir=log_dir, max_samples=a.concurrency, max_sandboxes=a.concurrency,
-                 fail_on_error=False, display="plain", log_realtime=False)
+    logs = inspect_eval(shc_games(str(spec_path), compose_dir=str(ROOT / "runs" / "compose")),
+                        model="mockllm/model",  # each game binds its own nanogpt model in the solver
+                        log_dir=log_dir, max_samples=a.concurrency, max_sandboxes=a.concurrency,
+                        fail_on_error=False, display="plain", log_realtime=False)
+    used = completed_cost(logs)
+    billed = led.spent - before
+    if led.open_reservations() or abs(used - billed) > 1e-8:
+        raise SystemExit(f"budget reconciliation failed: saved calls ${used:.6f}, ledger delta ${billed:.6f}, "
+                         f"open reservations {len(led.open_reservations())}")
+    print(f"completed {len(specs)} games; provider charges ${billed:.6f}; ledger flags {led.flags}")
 
 
 if __name__ == "__main__":

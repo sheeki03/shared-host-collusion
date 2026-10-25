@@ -5,10 +5,11 @@ Tests go in `harness/tests/`. Run them with `.venv/bin/python -m pytest harness/
 A PreToolUse security hook blocks inline `python -c` and complex nested shell, so write scripts to files and run them.
 Never print or log API keys. The key is read from `~/.nanogpt-api-key` at call time.
 
-## H1: `harness/ledger.py` + `harness/nanogpt_provider.py` (exact, fail-closed global budget)
+## H1: `harness/ledger.py` + `harness/nanogpt_provider.py` (conservative, fail-closed local admission budget)
 
 ### `BudgetLedger(path: str, cap_usd: float)`
-- **Append-only JSONL file.** One line per event: reserve, settle, release, or flag. Each line carries:
+- **Append-only JSONL file.** An initialization event pins the ledger UUID and cap; reserve, settle, release,
+  flag and audited cap-change events follow. Each call event carries:
   - timestamp
   - id
   - model
@@ -17,19 +18,24 @@ Never print or log API keys. The key is read from `~/.nanogpt-api-key` at call t
   - sample_id
   - call kind
 - **State is rebuilt from the file on start.** If two `BudgetLedger` objects share a path, they see each other's events. That is crash-safe and multi-process safe, using `fcntl.flock` around read-modify-append.
+- **Paid-run initialization is explicit.** A runner without `--init-ledger` resumes an existing file and refuses a missing
+  one; cap changes require the previous cap and an audited reason. No process may silently reset accumulated spend.
 - **`async reserve(est_max_usd, meta) -> token`:**
   - Atomic under both an asyncio lock and the file lock.
   - Raises `BudgetExceeded` if `settled + outstanding_reservations + est_max > cap`.
 - **`async settle(token, actual_usd)`:**
   - Replaces the reservation with the actual cost.
   - If `actual_usd` is None, settles at `est_max` and writes a "flag" line (fail closed).
+  - If the reported charge exceeds `est_max`, records that bill, flags a bound breach, and halts further admissions.
+    A bill cannot be undone, so the ceiling is conditional on the provider honouring its advertised context and the
+    pinned price table. Do not describe it as an unconditional provider-side spending limit.
 - **`async release(token)`:** for calls that never reached the provider.
 - **Properties:** `spent`, `outstanding`, `remaining`.
 - **Tests:**
   - concurrency (200 parallel reserves with a cap that admits exactly N);
   - crash recovery (rebuild from file);
   - missing-cost path;
-  - cap never exceeded.
+  - a bound breach is recorded and prevents later calls; cap persistence and audited increase.
 
 ### `nanogpt_provider.py`: an Inspect `ModelAPI` registered as `nanogpt`
 - **Usage:** model strings look like `nanogpt/z-ai/glm-5.3`. Check the custom-provider API in the installed Inspect source (`inspect_ai/model/_registry.py`, `_model.py`) and in the "Custom Model Providers" docs.
@@ -40,7 +46,10 @@ Never print or log API keys. The key is read from `~/.nanogpt-api-key` at call t
   - `seed`, if set
 - **Before each HTTP attempt:**
   - Compute `est_max` from a price table: `harness/model_prices.json`, $/M in and out, built from `/private/tmp/nanogpt-models.json` for the 13 roster models plus the compliance and judge models.
-  - The formula is (input chars / 2.5 as tokens) × in-price + `max_tokens` × out-price, ×1.2 safety.
+  - The reservation uses the model's **full advertised input context** × the highest listed input price plus
+    `max_tokens` × the highest listed output price, ×1.2 safety. A character/token average is not a bound.
+  - The CLI reports the largest reservation and one-wave headroom before the first call. For a small cap, lower
+    concurrency or explicitly increase the cap rather than letting some game samples fail mid-wave.
   - Call `ledger.reserve`.
 - **After each attempt:**
   - `settle` with `usage.cost` from the response.
@@ -55,7 +64,9 @@ Never print or log API keys. The key is read from `~/.nanogpt-api-key` at call t
 - **Ledger wiring:** the ledger path and cap come from env `SHC_LEDGER_PATH` and `SHC_BUDGET_CAP_USD`. If either is missing or the ledger is unreadable, raise before any HTTP call (fail closed).
 - **Tests:**
   - Use `httpx.MockTransport` for success, missing cost, 429-then-success, and timeout.
-  - Then make **at most 3 real calls** to `z-ai/glm-5.2` with `reasoning_effort="none"`, `max_tokens=20`, ledger cap $0.05, through Inspect's `get_model("nanogpt/z-ai/glm-5.2")`. Show that `ModelOutput.metadata["cost_usd"]` matches the ledger.
+  - Then, only when paid testing is authorized, make **at most 3 real calls** to `z-ai/glm-5.2` with
+    `reasoning_effort="none"`, `max_tokens=20`, ledger cap $2 (to accommodate the full-context reservation),
+    through Inspect's `get_model("nanogpt/z-ai/glm-5.2")`. Show that `ModelOutput.metadata["cost_usd"]` matches the ledger.
 
 ## H2: `harness/sandbox_env.py` + `harness/traces.py` + `harness/shell.py` + `harness/gate.py` (hardened sandbox, traces, gate)
 

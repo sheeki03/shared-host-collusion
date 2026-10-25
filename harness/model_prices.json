@@ -1,0 +1,316 @@
+{
+ "_meta": {
+  "source": "/private/tmp/nanogpt-models.json",
+  "source_sha256": "0e870e1be7ee2a96675fd3dbd9e892fe41fb8df71e2e81a0110c74f16b761668",
+  "built_utc": "2026-10-24T21:55:40+00:00",
+  "unit": "USD per 1M tokens",
+  "estimating_rule": "in_per_m = max(pricing.prompt, list input, list input above threshold, cache-write input); out_per_m = max(pricing.completion, list output, list output above threshold). catalog_* = the catalogue `pricing` field (actual costs observed ~10% below it in the Step 2 probe).",
+  "est_formula": "1.2 * (advertised_context_length * in_per_m + max_tokens * out_per_m) / 1e6; local cap conditional on provider context and pinned prices"
+ },
+ "models": {
+  "anthropic/claude-opus-5.5": {
+   "name": "Claude Opus 5.5",
+   "in_per_m": 5.0,
+   "out_per_m": 20.0,
+   "catalog_in_per_m": 4.0,
+   "catalog_out_per_m": 20.0,
+   "in_candidates": {
+    "catalog": 4.0,
+    "cache_write": 5.0
+   },
+   "out_candidates": {
+    "catalog": 20.0
+   },
+   "pricing_type": null,
+   "context_length": 1000000,
+   "max_output_tokens": 128000,
+   "reasoning_efforts": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  "openai/gpt-6.1-sol": {
+   "name": "GPT 6.1 Sol",
+   "in_per_m": 2.5,
+   "out_per_m": 10.0,
+   "catalog_in_per_m": 2.0,
+   "catalog_out_per_m": 10.0,
+   "in_candidates": {
+    "catalog": 2.0,
+    "cache_write": 2.5
+   },
+   "out_candidates": {
+    "catalog": 10.0
+   },
+   "pricing_type": null,
+   "context_length": 1050000,
+   "max_output_tokens": 128000,
+   "reasoning_efforts": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  "google/gemini-3.1-pro-preview": {
+   "name": "Gemini 3.1 Pro (Preview)",
+   "in_per_m": 2.0,
+   "out_per_m": 12.0,
+   "catalog_in_per_m": 2.0,
+   "catalog_out_per_m": 12.0,
+   "in_candidates": {
+    "catalog": 2.0,
+    "cache_write": 0.375
+   },
+   "out_candidates": {
+    "catalog": 12.0
+   },
+   "pricing_type": null,
+   "context_length": 1048576,
+   "max_output_tokens": 65536,
+   "reasoning_efforts": [
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  "z-ai/glm-5.3": {
+   "name": "GLM 5.3",
+   "in_per_m": 0.6,
+   "out_per_m": 1.1,
+   "catalog_in_per_m": 0.6,
+   "catalog_out_per_m": 1.1,
+   "in_candidates": {
+    "catalog": 0.6
+   },
+   "out_candidates": {
+    "catalog": 1.1
+   },
+   "pricing_type": null,
+   "context_length": 1048576,
+   "max_output_tokens": 131072,
+   "reasoning_efforts": [
+    "low",
+    "high",
+    "max"
+   ]
+  },
+  "deepseek/deepseek-v4-pro": {
+   "name": "DeepSeek V4 Pro",
+   "in_per_m": 1.1,
+   "out_per_m": 2.2,
+   "catalog_in_per_m": 0.7,
+   "catalog_out_per_m": 1.4,
+   "in_candidates": {
+    "catalog": 0.7,
+    "list": 1.1
+   },
+   "out_candidates": {
+    "catalog": 1.4,
+    "list": 2.2
+   },
+   "pricing_type": "static",
+   "context_length": 1048576,
+   "max_output_tokens": 384000,
+   "reasoning_efforts": [
+    "none",
+    "high",
+    "max"
+   ]
+  },
+  "anthropic/claude-sonnet-5.5": {
+   "name": "Claude Sonnet 5.5",
+   "in_per_m": 2.5,
+   "out_per_m": 10.0,
+   "catalog_in_per_m": 2.0,
+   "catalog_out_per_m": 10.0,
+   "in_candidates": {
+    "catalog": 2.0,
+    "cache_write": 2.5
+   },
+   "out_candidates": {
+    "catalog": 10.0
+   },
+   "pricing_type": null,
+   "context_length": 1000000,
+   "max_output_tokens": 128000,
+   "reasoning_efforts": [
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  "x-ai/grok-4.7": {
+   "name": "Grok 4.7",
+   "in_per_m": 4.0,
+   "out_per_m": 12.0,
+   "catalog_in_per_m": 2.0,
+   "catalog_out_per_m": 6.0,
+   "in_candidates": {
+    "catalog": 2.0,
+    "list": 2.0,
+    "list_above_threshold": 4.0
+   },
+   "out_candidates": {
+    "catalog": 6.0,
+    "list": 6.0,
+    "list_above_threshold": 12.0
+   },
+   "pricing_type": "observed",
+   "context_length": 500000,
+   "max_output_tokens": null,
+   "reasoning_efforts": [
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+   ]
+  },
+  "moonshotai/kimi-k3.1-pro": {
+   "name": "Kimi K3.1 Pro",
+   "in_per_m": 2.0,
+   "out_per_m": 10.0,
+   "catalog_in_per_m": 2.0,
+   "catalog_out_per_m": 10.0,
+   "in_candidates": {
+    "catalog": 2.0,
+    "cache_write": 2.0
+   },
+   "out_candidates": {
+    "catalog": 10.0
+   },
+   "pricing_type": null,
+   "context_length": 1048576,
+   "max_output_tokens": 1048576,
+   "reasoning_efforts": [
+    "low",
+    "high",
+    "max"
+   ]
+  },
+  "qwen/qwen3.8-max-prime": {
+   "name": "Qwen3.8 Max Prime",
+   "in_per_m": 4.0,
+   "out_per_m": 12.0,
+   "catalog_in_per_m": 4.0,
+   "catalog_out_per_m": 12.0,
+   "in_candidates": {
+    "catalog": 4.0
+   },
+   "out_candidates": {
+    "catalog": 12.0
+   },
+   "pricing_type": null,
+   "context_length": 1000000,
+   "max_output_tokens": 131072,
+   "reasoning_efforts": [
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+   ]
+  },
+  "z-ai/glm-5.2": {
+   "name": "GLM 5.2",
+   "in_per_m": 1.4,
+   "out_per_m": 4.4,
+   "catalog_in_per_m": 0.189,
+   "catalog_out_per_m": 0.594,
+   "in_candidates": {
+    "catalog": 0.189,
+    "list": 1.4
+   },
+   "out_candidates": {
+    "catalog": 0.594,
+    "list": 4.4
+   },
+   "pricing_type": "observed",
+   "context_length": 1048576,
+   "max_output_tokens": 131072,
+   "reasoning_efforts": [
+    "none",
+    "high",
+    "max"
+   ]
+  },
+  "abliteration-ai/abliterated-model-large": {
+   "name": "Abliterated Model Large",
+   "in_per_m": 3.0,
+   "out_per_m": 5.0,
+   "catalog_in_per_m": 3.0,
+   "catalog_out_per_m": 5.0,
+   "in_candidates": {
+    "catalog": 3.0
+   },
+   "out_candidates": {
+    "catalog": 5.0
+   },
+   "pricing_type": null,
+   "context_length": 1000000,
+   "max_output_tokens": 999990,
+   "reasoning_efforts": [
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  "deepseek/deepseek-v4.1-flash-1017": {
+   "name": "DeepSeek V4.1 Flash 1017",
+   "in_per_m": 0.1,
+   "out_per_m": 0.6,
+   "catalog_in_per_m": 0.1,
+   "catalog_out_per_m": 0.6,
+   "in_candidates": {
+    "catalog": 0.1,
+    "list": 0.1
+   },
+   "out_candidates": {
+    "catalog": 0.6,
+    "list": 0.6
+   },
+   "pricing_type": "observed",
+   "context_length": 1048576,
+   "max_output_tokens": 393216,
+   "reasoning_efforts": [
+    "none",
+    "low",
+    "high",
+    "max"
+   ]
+  },
+  "abliteration-ai/abliterated-model-large-flash": {
+   "name": "Abliterated Large Flash",
+   "in_per_m": 1.0,
+   "out_per_m": 2.0,
+   "catalog_in_per_m": 1.0,
+   "catalog_out_per_m": 2.0,
+   "in_candidates": {
+    "catalog": 1.0
+   },
+   "out_candidates": {
+    "catalog": 2.0
+   },
+   "pricing_type": null,
+   "context_length": 1048576,
+   "max_output_tokens": 262144,
+   "reasoning_efforts": [
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  }
+ }
+}
