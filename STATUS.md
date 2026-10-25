@@ -18,11 +18,11 @@ Times are IST. Newest entries at the bottom of each step.
 - Inspect 0.3.283 in an isolated venv `.venv` (Python 3.13), with numpy, scipy, pandas, matplotlib, httpx, pyyaml and openai.
 - **Raw API probe** (`spike/probe_raw.py`, 4 calls, ≈ $0.0013 in total): GLM 5.3, GPT-6.1 Sol, Opus 5.5 and GLM 5.2 all replied with valid JSON in 1.4–3.7 s.
   - `reasoning_effort` is honoured: GLM 5.2 "none" used 0 reasoning tokens; GLM 5.3 "low" used 28.
-  - nanoGPT returns the exact USD cost per call in `usage.cost`, so the spending cap can be exact.
+  - nanoGPT returns a USD charge in raw `usage.cost`; the Inspect spike did not preserve it. Step 3 later added a custom provider and a conservative local admission cap with per-attempt reconciliation.
 - **Inspect spike** (`spike/spike_task.py`, GLM 5.3 low, 2 samples, 2:36 wall-clock, 2,784 tokens):
   - Shared scratch: a nonce crossed in both directions, and the file owner showed as uid 1001.
   - Private scratch: no crossing either way. Reader-before-writer control: empty.
-  - No network in either container (no DNS, no TCP).
+  - Both Compose services used `network_mode: none`; the spike dynamically probed no DNS/TCP in firm A. Step 3 sandbox tests later probe both firms.
   - The 2-round mini game ran commands as the firm's uid and wrote an `.eval` log.
   - One price failed to parse in the spike's simple parser; the real harness retries once, then falls back to the last price.
   - Observation: agents list and `cat` `/srv/scratch/*` without being asked, so exposure to rival files will be common.
@@ -40,3 +40,10 @@ Times are IST. Newest entries at the bottom of each step.
 - Inspect proved the shared/private storage route, but the shared spike's combined scorer failed on an unparseable price. Raw provider costs were not preserved as exact per-call costs in the Inspect log.
 - The implementation checklist now requires a fail-closed global budget ledger, single-execution shell commands, independent trace labels, container/bulletin hardening, matched-game statistics, and five engines with ten scenario framings.
 - Read-only review only: no new model calls. A redacted secret scan found no leaks in the three reachable commits.
+
+## Step 3 implementation and verification (25 Oct, through ~14:55 IST)
+- Five economic engines, the budget/provider/runner, sandbox/traces/gate, statistics and the confirmatory analysis bridge were built and pushed in separate commits. No new paid model calls were made.
+- Verification: 340 engine tests, 58 analysis tests, and 202 harness tests passed; the one opt-in paid provider test was skipped. Targeted Docker trace, bulletin, inbox and process-cleanup tests passed. Ruff and a redacted working-tree secret scan passed.
+- A previous 9-game mock E2E passed but one batch had repeated ~900-second Docker/Inspect stalls. New mock-only waves after trace caching completed without long calls: 3 games × 12 rounds in 216 s; 10 × 4 in 176 s; 20 × 6 in 483 s.
+- **Phase 4 remains NO-GO for throughput:** 120 mock game-rounds in 483 s at 20 concurrent games projects to about 47 hours for the 41,640-round full grid before model calls. This is a measured short-wave extrapolation, not a full-length forecast. Work is continuing to reduce Docker operations per round; a new timed benchmark is required before the paid pilot.
+- The wedged `shcv2explore-firm_a-1` container was left untouched. Healthy `product-*` containers were not restarted or modified.
