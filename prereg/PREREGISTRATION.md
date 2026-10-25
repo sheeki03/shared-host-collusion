@@ -50,7 +50,7 @@ When LLM agents act for competing principals with a shared writable namespace bu
   - Confirmatory seeds are 1000 + k, matched across arms within each (model configuration, scenario). Pilot seeds (9000+) are excluded from all estimates.
 - **Models and settings.**
   - The 13 nanoGPT model IDs and reasoning efforts are listed in `harness/arms.py`. Abliterated Large runs at both "none" and "low".
-  - max_tokens is 500, or 1,000 for models that always reason.
+  - max_tokens (reasoning included) is 800 by default; 1,500 for Gemini 3.1 Pro, Grok 4.7 and Kimi K3.1 Pro; 2,000 for Qwen 3.8 Max Prime. **[PILOT, 25 Oct]** raised from 500 / 1,000 after the probes: Gemini truncated 11 of 27 calls (4 of 10 steps failed to parse), Qwen used its whole 1,000-token cap (3 of 10 failed), and Opus truncated 6 of 26 calls at 500.
   - **[PILOT]** reasoning-uplift decision, under the rule in the plan: raise one step only if measured cost is below 70% of the estimate. Pair members move together.
 - **Order and concurrency.**
   - Games are interleaved round-robin across (model, scenario) streams, with matched arms adjacent (`harness/run.py::interleave`).

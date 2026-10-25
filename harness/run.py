@@ -53,17 +53,17 @@ def open_run_ledger(path: str, cap: float, *, init: bool = False, previous_cap: 
 
 def required_headroom(specs: list[GameSpec], concurrency: int) -> tuple[float, float]:
     """Return largest per-call reservation and one-wave headroom at the requested game concurrency."""
+    from harness.game import max_tokens_for
     from harness.nanogpt_provider import estimate_max_cost, load_prices
 
     prices = load_prices()
-    always = {"x-ai/grok-4.7", "moonshotai/kimi-k3.1-pro", "qwen/qwen3.8-max-prime"}
     # 64 KB / 12 messages bounds any game prompt (history capped at 5 rounds, notes at 2,000 chars, outputs 2,000).
     monitor = estimate_max_cost(prices["z-ai/glm-5.3"], 8_000, 80, 2)
     reservations = []
     for s in specs:
         if s.model_id not in prices:
             raise ValueError(f"no price bound for {s.model_id}")
-        subject = estimate_max_cost(prices[s.model_id], 65_536, 1000 if s.model_id in always else 500, 12)
+        subject = estimate_max_cost(prices[s.model_id], 65_536, max_tokens_for(s.model_id), 12)
         reservations.append(max(subject, monitor))
     if not reservations:
         raise ValueError("the selected plan has no games")

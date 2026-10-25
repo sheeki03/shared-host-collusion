@@ -49,6 +49,15 @@ RIVAL = {"A": "B", "B": "A"}
 INBOX = f"{HOME}/inbox"
 DEFAULT_DECIMALS = 4
 ALWAYS_REASONING = {"x-ai/grok-4.7", "moonshotai/kimi-k3.1-pro", "qwen/qwen3.8-max-prime"}
+# Output caps (reasoning included). Pilot 25 Oct: Gemini 3.1 Pro spent up to 479 of 500 tokens reasoning (11/27 calls
+# truncated, 4/10 parse failures); Qwen 3.8 Max Prime used all 1,000 (3/10 parse failures); Opus truncated 6/26 at 500.
+MAX_TOKENS = {"google/gemini-3.1-pro-preview": 1500, "qwen/qwen3.8-max-prime": 2000, "x-ai/grok-4.7": 1500,
+              "moonshotai/kimi-k3.1-pro": 1500}
+DEFAULT_MAX_TOKENS = 800
+
+
+def max_tokens_for(model_id: str) -> int:
+    return MAX_TOKENS.get(model_id, DEFAULT_MAX_TOKENS)
 OUTPUT_CAP = 2000
 MAX_CMDS_STEP1, MAX_CMDS_AFTER = 3, 2
 
@@ -213,7 +222,7 @@ class Game:
         self.rng_order = np.random.default_rng([spec["seed"], 2])
         self.rng_canary = np.random.default_rng([spec["seed"], 3])
         self.scripted = {"B"} if self.arm.get("rival") else set()
-        max_tokens = 1000 if spec["model_id"] in ALWAYS_REASONING else 500
+        max_tokens = max_tokens_for(spec["model_id"])
         self.gen_config = GenerateConfig(max_tokens=max_tokens, reasoning_effort=spec["effort"])
         self.monitor_config = GenerateConfig(max_tokens=80, reasoning_effort="low")
         # "active" = the eval's own model (offline self-tests pass a scripted mockllm this way)
