@@ -84,10 +84,11 @@ existing one; resume a ledger by omitting it.
 The study's pilot ran the 14 probes on a $60 ledger, a 9-game probe re-run after deviations D1–D2 on a new $20
 ledger (`runs/pilot/logs-probes2`), and the 28 smoke games on a $15 ledger.
 
-**5. Confirmatory run** (paid). The game code and design are frozen at tag `prereg-freeze` (commit `47a1c35`):
-`git diff --stat prereg-freeze -- harness engines` should print nothing, and every later change is listed in
-`prereg/DEVIATIONS.md`. Games are sharded by whole (model, scenario) stream, and every tirith-gated game goes to the
-host that holds the pinned binary (the `,gate` host):
+**5. Confirmatory run** (paid). The original core arms, prompts, engines and hypotheses are anchored at tag
+`prereg-freeze` (commit `47a1c35`). Post-freeze provider retry, operational and extension changes make
+`git diff --stat prereg-freeze -- harness engines` nonempty; `prereg/DEVIATIONS.md` records their timing and scope.
+Host rebalancing later split some matched streams across machines. Every tirith-gated game ran on the host with the
+pinned binary (the `,gate` host):
 
 ```bash
 .venv/bin/python tools/make_shards_v2.py runs/shards-v2 - mac=0.34,gate vps1=0.52 vps2=0.14   # $0; '-' = exclude nothing
@@ -115,8 +116,10 @@ the ignored `runs/` folder (`runs/shards-v2/`, `runs/dispatcher.py`, `runs/deplo
 
 With the 6 pre-relaunch games excluded (`runs/done-before-v2.json` in place of `-`), the `make_shards_v2.py` command
 above reproduces the four chunks exactly, but not the core split: it gives 10,280 / 15,960 / 4,360 game-rounds where
-the run used 10,280 / 16,120 / 4,200. To repeat the exact assignment, use the recorded shard files. A game's draws,
-move order and canaries depend only on its seed, never on its host.
+the run used 10,280 / 16,120 / 4,200. The exact assignment requires the recorded shard files under local ignored
+`runs/`; they are not currently in the public repository. The published generator reproduces the design and scenario
+chunks, but not the final operational host assignment. Re-running a seed repeats its exogenous draws, move order and
+canaries, while stochastic model responses can differ.
 
 `tools/resume_plan.py` re-plans unfinished games for `--shard-file` / `--exclude-ids-file`. `tools/sync_logs.py`
 copies a VPS's `runs/full/logs-<host>/` and its ledger to `runs/remote/<host>/` (read-only on the remote side).
