@@ -5,7 +5,6 @@ import os
 import shutil
 import subprocess
 import sys
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -444,6 +443,33 @@ def test_collect_and_render_every_tag_host_and_chunk(tmp_path, monkeypatch):
     completed, failed, where = from_logs(["mac", "vps1"])
     assert set(ok_ids) <= completed and where[ok_ids[0]] == "mac"
     assert failed and failed <= set(err_ids) and not failed & completed
+
+
+def test_progress_ignores_copied_ledgers_directory_as_a_host(tmp_path):
+    """An archive of old ledgers is not a runner: it must not add spend, pending work, or an ETA lane."""
+    t0 = datetime(2026, 10, 25, 20, 0, tzinfo=timezone.utc)
+    root = tmp_path / "study"
+    runs_dir = root / "runs"
+    host_dir = runs_dir / "remote" / "instabox"
+    copies_dir = runs_dir / "remote" / "ledgers"
+    for d in (host_dir, copies_dir, runs_dir / "shards"):
+        d.mkdir(parents=True)
+    (runs_dir / "dispatch_hosts.json").write_text(json.dumps({"instabox": "instabox"}))
+    (runs_dir / "shards" / "instabox-v5.json").write_text(
+        json.dumps({"host": "instabox", "game_ids": ["g1", "g2"]}))
+    ledger = _ledger_lines(["g1"], t0)
+    (host_dir / "ledger-instabox-v5.jsonl").write_text(ledger)
+    (copies_dir / "ledger-instabox-v5.jsonl").write_text(ledger)
+    (host_dir / "sync_state.json").write_text(json.dumps({"host": "instabox", "logs_last_success": t0.isoformat()}))
+
+    rounds = {"g1": 3, "g2": 3}
+    runs, hosts = progress.collect_runs(root, rounds, t0 + timedelta(minutes=10), local_runners=set())
+    assert {"mac", "instabox"} <= set(hosts) and "ledgers" not in hosts
+    assert [(r.host, r.tag) for r in runs] == [("instabox", "instabox-v5")]
+    text = progress.render(runs, hosts, root, rounds, {"g1": 6, "g2": 6},
+                           t0 + timedelta(minutes=10), 2, None)
+    assert "== ledgers" not in text
+    assert "spent $0.01 across 1 ledgers" in text
 
 
 # ------------------------------------------------------------------ adversarial checks: transport, freshness, ETA

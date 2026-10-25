@@ -471,7 +471,13 @@ def collect_runs(root: Path, rounds_by_id: dict[str, int], now: datetime, local_
         hosts.setdefault(h, d)
     remote_dir = root / "runs" / "remote"
     for p in sorted(remote_dir.iterdir()) if remote_dir.is_dir() else []:
-        if p.is_dir() and not p.name.startswith("."):
+        # Unknown host directories need evidence of an actual synced runner. `runs/remote/ledgers/` is a cache of
+        # old ledger copies for reconciliation, not another host; admitting every directory here double-counts its
+        # spend and creates ghost pending work/ETAs from matching shard filenames. Configured hosts stay visible even
+        # before their first successful sync.
+        has_run_data = (p / "sync_state.json").is_file() or (p / "shards").is_dir() or \
+            any(p.glob("logs-*"))
+        if p.is_dir() and not p.name.startswith(".") and (p.name in hosts or has_run_data):
             hosts.setdefault(p.name, "?")
     runs: list[Run] = []
     for h in hosts:
