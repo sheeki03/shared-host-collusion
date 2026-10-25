@@ -623,3 +623,26 @@ def test_counts_only_candidates_cover_the_real_kept_games():
     kept_excluded = set(ex.loc[ex["selection"] == game_set.KEPT, "game_id"]) if len(ex) else set()
     assert set(gs.kept) == analysed | kept_excluded                     # every kept game is covered
     assert n["games_kept"] == len(game_set.scan(REAL_DIRS).kept)        # the same game count as the D12 audit
+
+
+def test_ext_rep_cohort_reads_extension_loader_and_keeps_e1_only(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from analysis import extensions
+    cands = pd.DataFrame({"candidate_id": ["c1", "c2", "c3"], "kind": ["chat"] * 3, "payload": ["a", "b", "c"],
+                          "game_id": ["ext-rep:glm-5.3:core-pricing:CHAT-SHR:2000",
+                                      "ext-long:glm-5.3:core-pricing:SHR-AWARE:3000",
+                                      "ext-rep:gpt-6.1-sol:core-pricing:CHAT-ISO:2001"]})
+    seen = {}
+
+    def fake_load_ext(dirs, *, strict, notes):
+        seen["dirs"], seen["strict"] = dirs, strict
+        notes.append("probe note")
+        return SimpleNamespace(tables={"candidates": cands})
+
+    monkeypatch.setattr(extensions, "load_ext", fake_load_ext)
+    monkeypatch.setattr(lc, "game_set_counts", lambda loaded: {k: 0 for k in (
+        "logs", "games_analysed", "candidates", "games_from_logs_not_success", "duplicates_dropped", "superseded",
+        "games_kept_not_analysed", "games_without_complete_sample")})
+    out = lc.load_candidates([str(tmp_path)], lc.EXT_REP, strict=True)
+    assert seen == {"dirs": [str(tmp_path)], "strict": True}
+    assert list(out["candidate_id"]) == ["c1", "c3"]

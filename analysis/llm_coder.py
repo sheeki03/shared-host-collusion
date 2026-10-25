@@ -39,7 +39,7 @@ directories, unreadable (live) logs and the D12 fail-closed cases with a warning
 
 CLI (from the repo root, with the repo venv):
   python -m analysis.llm_coder label LOG_DIR [LOG_DIR ...] --out DIR --ledger PATH --cap USD
-         [--cohort confirmatory|pilot|all] [--lenient] [--concurrency 4] [--limit N]
+         [--cohort confirmatory|pilot|all|ext-rep] [--lenient] [--concurrency 4] [--limit N]
   python -m analysis.llm_coder sheet LOG_DIR [...] --out DIR [--cohort ...]          # rewrite labels.csv only
   python -m analysis.llm_coder handcheck LOG_DIR [...] --out DIR [--handcheck-dir runs/analysis/handcheck]
          [--n N]       # default: the pre-registered quotas (50 yes + 50 no, or all yes if fewer); --n N deviates
@@ -719,13 +719,18 @@ def result_keys(summary: Mapping[str, Any], agree: Mapping[str, Any] | None = No
 
 # ------------------------------------------------------------------------------------------------------------- CLI
 
+EXT_REP = "ext-rep"  # E1 replication games (prereg/EXTENSIONS.md), labelled on their own ledger
+
+
 def candidate_set(log_dirs: Iterable[str], cohort: str, *, strict: bool = True) -> Any:
     """The D12 game set of every log in ``log_dirs`` at once (a ``game_set.Loaded``), read by the loader that
     analysis/report_outputs.py uses (``game_set.load_tables``), so its candidates are exactly report_outputs'
     L2 candidates: one copy per game (the complete sample that finished first, from a log of any status), never a
     dropped duplicate, a superseded sample or a pre-registered exclusion. ``strict`` (the default) fails where
     confirmatory report_outputs fails (a missing directory, an unreadable log, the GameSetError cases); without it
-    those are skipped with a warning, as report_outputs --preliminary does."""
+    those are skipped with a warning, as report_outputs --preliminary does. ``cohort='ext-rep'`` reads the logs with
+    analysis/extensions.py's own loader (``load_ext``: the extension cohort gate, the D12 rule, its structural
+    exclusions), so E1's candidates are exactly the ones its analysis looks up (prereg/EXTENSIONS.md E1 labels)."""
     from analysis import game_set
     dirs: list[str] = []
     for d in log_dirs:
@@ -735,6 +740,13 @@ def candidate_set(log_dirs: Iterable[str], cohort: str, *, strict: bool = True) 
             print(f"WARNING: log directory missing, skipped: {d}", file=sys.stderr)
             continue
         dirs.append(str(d))
+    if cohort == EXT_REP:
+        from analysis import extensions
+        notes: list[str] = []
+        loaded = extensions.load_ext(dirs, strict=strict, notes=notes)
+        for m in notes:
+            print(f"WARNING: {m}", file=sys.stderr)
+        return loaded
     return game_set.load_tables(dirs, cohort=cohort, strict=strict,
                                 warn=lambda m: print(f"WARNING: game set (D12): {m}", file=sys.stderr))
 
@@ -766,6 +778,9 @@ def load_candidates(log_dirs: Iterable[str], cohort: str, *, strict: bool = True
           f"{n['games_kept_not_analysed']} kept games excluded, {n['games_without_complete_sample']} games without a "
           "complete sample)", file=sys.stderr)
     c = loaded.tables["candidates"].reset_index(drop=True)
+    if cohort == EXT_REP:  # E1 only: the other extensions take no L2 labels (prereg/EXTENSIONS.md)
+        c = c[c["game_id"].astype(str).str.startswith(EXT_REP + ":")].reset_index(drop=True)
+        print(f"{len(c)} candidates in E1 ({EXT_REP}) games", file=sys.stderr)
     if c["candidate_id"].duplicated().any():
         raise ValueError("duplicate candidate IDs in the D12 game set (one game entered twice?)")
     return c
@@ -903,7 +918,7 @@ def main(argv: list[str] | None = None) -> None:
     def common(sp: argparse.ArgumentParser, logs: bool = True) -> None:
         if logs:
             sp.add_argument("log_dirs", nargs="+")
-            sp.add_argument("--cohort", default="confirmatory", choices=("confirmatory", "pilot", "all"))
+            sp.add_argument("--cohort", default="confirmatory", choices=("confirmatory", "pilot", "all", EXT_REP))
             sp.add_argument("--lenient", action="store_true",
                             help="skip missing directories, unreadable (live) logs and the D12 fail-closed cases "
                                  "with a warning, as report_outputs --preliminary does (default: fail as "
