@@ -1,12 +1,18 @@
-"""Synthetic checks for tools/pick_excerpts.py (no logs, no Docker)."""
+"""Synthetic checks for tools/pick_excerpts.py (synthetic logs only, no Docker)."""
+import copy
+import glob
 import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
 
 import pick_excerpts as pe  # noqa: E402
+from analysis import game_set  # noqa: E402
+from analysis.tests.test_llm_coder import eval_sample, write_log  # noqa: E402
 
 CA = ["CX-aaaaaaaaaaa1", "CX-aaaaaaaaaaa2", "CX-aaaaaaaaaaa3"]
 CB = ["CX-bbbbbbbbbbb1", "CX-bbbbbbbbbbb2", "CX-bbbbbbbbbbb3"]
@@ -135,3 +141,74 @@ def test_absent_excerpt_written(tmp_path):
     assert doc["EXCERPT:3"]["tier"] is None
     text = (tmp_path / "e.md").read_text()
     assert "<!-- EXCERPT:1 BEGIN -->" in text and "<!-- EXCERPT:3 END -->" in text
+
+
+# ----------------------------------------------------------------------------- D12: the kept copy of each game
+def gated_meta(seed, marker):
+    """A complete gated game as the harness logs it; `marker` is in its evading command's output."""
+    g = gated_game(seed=seed)
+    r = copy.deepcopy(g.r)
+    r["outputs"]["A"][2]["output"] = f"rival says {CB[0]} ({marker})"
+    r["chat_deliveries"] = []
+    return {**g.meta, "engine": "pricing", "rounds": 2, "result": r}
+
+
+def d12_logs(root):
+    """The dropped copy of game 1000 sits in the log that sorts first by path (as in runs/full/logs-macv2): it
+    finished later than the copy in a log of a stopped launch ('started'). Game 1001 has an errored copy there."""
+    first, second = root / "full" / "logs-a", root / "remote" / "logs-b"
+    write_log(first / "2026-10-25T17-16-48_B.eval", [
+        eval_sample(gated_meta(1000, "dropped copy"), completed_at="2026-10-25T18:10:00+00:00"),
+        eval_sample(gated_meta(1001, "errored copy"), completed_at=None, error="CancelledError()")],
+        status="success", created="2026-10-25T17:16:48+00:00", eval_id="evB")
+    kept = write_log(second / "2026-10-25T16-54-37_A.eval", [
+        eval_sample(gated_meta(1000, "kept copy"), completed_at="2026-10-25T17:05:00+00:00"),
+        eval_sample(gated_meta(1001, "only complete copy"), completed_at="2026-10-25T17:20:00+00:00")],
+        status="started", created="2026-10-25T16:54:37+00:00", eval_id="evA")
+    return [str(first), str(second)], kept
+
+
+def fresh_stats():
+    return {"samples": 0, "eligible": 0, "skipped_incomplete": 0, "skipped_pilot": 0, "unreadable": []}
+
+
+def test_reads_the_d12_kept_copy_not_the_first_file(tmp_path):
+    paths, kept_file = d12_logs(tmp_path)
+    stats = fresh_stats()
+    games = list(pe.iter_games(paths, False, stats))
+    by = {g.meta["game_id"]: g for g in games}
+    g1000, g1001 = gated_game(seed=1000).meta["game_id"], gated_game(seed=1001).meta["game_id"]
+    assert set(by) == {g1000, g1001} and all(g.log.endswith("_A.eval") for g in games)
+    assert "(kept copy)" in by[g1000].r["outputs"]["A"][2]["output"] and "result" not in by[g1000].meta
+    assert stats == {**fresh_stats(), "samples": 4, "eligible": 2, "skipped_incomplete": 1, "duplicates": 1,
+                     "notes": []}
+    md = pe.pick(games)[3]["render"]("EXCERPT:3 (a)")
+    assert "(kept copy)" in md and "dropped copy" not in md and by[g1000].meta["seed"] == 1000
+    # exactly the copies report_outputs analyses (analysis/game_set.load_tables over the same directories)
+    loaded = game_set.load_tables(paths)
+    tab = loaded.tables["games"]
+    assert {gid: r.log for gid, r in loaded.game_set.kept.items()} == {gid: g.log for gid, g in by.items()} \
+        == dict(zip(tab["game_id"], tab["log"].astype(str)))
+    # a log named both through its directory and as a file is read once
+    again = fresh_stats()
+    assert [g.log for g in pe.iter_games([*paths, str(kept_file)], False, again)] == [g.log for g in games]
+    assert again == stats
+    out = tmp_path / "e.md"
+    pe.write(pe.pick(games), stats, out, False, paths)
+    assert "dropped duplicate copies (D12: the copy that finished first is used) 1" in out.read_text()
+
+
+REAL_DIRS = sorted(glob.glob(str(ROOT / "runs" / "full" / "logs-*"))
+                   + glob.glob(str(ROOT / "runs" / "remote" / "*" / "logs-*")))
+
+
+@pytest.mark.skipif(not REAL_DIRS, reason="no local confirmatory log directories")
+def test_counts_only_real_logs_read_the_kept_copies():
+    """On the real local logs: the games the picker would read are the D12 kept copies (game ids and log names only;
+    nothing is rendered or printed but counts)."""
+    stats = fresh_stats()
+    got = {g.meta["game_id"]: g.log for g in pe.iter_games(REAL_DIRS, False, stats)}
+    kept = {gid: r.log for gid, r in game_set.scan(REAL_DIRS).kept.items()}
+    print(f"\nexcerpt candidates: {len(got)} games (kept {len(kept)}); stats "
+          f"{ {k: (len(v) if isinstance(v, list) else v) for k, v in stats.items()} }")
+    assert got == kept

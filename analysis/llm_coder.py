@@ -31,9 +31,15 @@ creates (or reopens with the same cap) at the path given on the command line. Th
 the hand-check directory must lie under the git-ignored ``runs/`` and outside the game-run trees (``runs/full``,
 ``runs/pilot``, ``runs/remote``); a ledger that already holds non-coder calls is refused.
 
+Candidate set: the candidates of the game set that analysis/report_outputs.py analyses (prereg/DEVIATIONS.md D12,
+``analysis.game_set.load_tables`` over all LOG_DIRs at once): complete samples from logs of any status, the
+first-finished copy of a game completed more than once, no dropped duplicate or superseded sample. Pass every log
+directory that report_outputs gets, so labels.csv covers exactly its candidates. ``--lenient`` skips missing
+directories, unreadable (live) logs and the D12 fail-closed cases with a warning, as report_outputs --preliminary.
+
 CLI (from the repo root, with the repo venv):
   python -m analysis.llm_coder label LOG_DIR [LOG_DIR ...] --out DIR --ledger PATH --cap USD
-         [--cohort confirmatory|pilot|all] [--concurrency 4] [--limit N]
+         [--cohort confirmatory|pilot|all] [--lenient] [--concurrency 4] [--limit N]
   python -m analysis.llm_coder sheet LOG_DIR [...] --out DIR [--cohort ...]          # rewrite labels.csv only
   python -m analysis.llm_coder handcheck LOG_DIR [...] --out DIR [--handcheck-dir runs/analysis/handcheck]
          [--n N]       # default: the pre-registered quotas (50 yes + 50 no, or all yes if fewer); --n N deviates
@@ -713,20 +719,55 @@ def result_keys(summary: Mapping[str, Any], agree: Mapping[str, Any] | None = No
 
 # ------------------------------------------------------------------------------------------------------------- CLI
 
-def load_candidates(log_dirs: Iterable[str], cohort: str) -> pd.DataFrame:
-    from analysis.dataset import load
-    from analysis.coding import INTERNAL_COLUMNS
-    frames = []
+def candidate_set(log_dirs: Iterable[str], cohort: str, *, strict: bool = True) -> Any:
+    """The D12 game set of every log in ``log_dirs`` at once (a ``game_set.Loaded``), read by the loader that
+    analysis/report_outputs.py uses (``game_set.load_tables``), so its candidates are exactly report_outputs'
+    L2 candidates: one copy per game (the complete sample that finished first, from a log of any status), never a
+    dropped duplicate, a superseded sample or a pre-registered exclusion. ``strict`` (the default) fails where
+    confirmatory report_outputs fails (a missing directory, an unreadable log, the GameSetError cases); without it
+    those are skipped with a warning, as report_outputs --preliminary does."""
+    from analysis import game_set
+    dirs: list[str] = []
     for d in log_dirs:
-        out = load(d, cohort=cohort, allow_exclusions=True)
-        excl = out["exclusions"]
-        n_bad = int((excl["reason"] != "outside requested cohort").sum()) if len(excl) else 0
-        print(f"{d}: {len(out['games'])} games, {len(out['candidates'])} candidates, {n_bad} invalid games skipped",
-              file=sys.stderr)
-        frames.append(out["candidates"])
-    c = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=INTERNAL_COLUMNS)
+        if not Path(d).exists():
+            if strict:
+                raise ValueError(f"log directory missing: {d}")
+            print(f"WARNING: log directory missing, skipped: {d}", file=sys.stderr)
+            continue
+        dirs.append(str(d))
+    return game_set.load_tables(dirs, cohort=cohort, strict=strict,
+                                warn=lambda m: print(f"WARNING: game set (D12): {m}", file=sys.stderr))
+
+
+def game_set_counts(loaded: Any) -> dict[str, int]:
+    """Counts of a ``candidate_set`` (ids and statuses only, no outcome). ``logs`` counts the logs that hold an
+    in-cohort sample (a live log whose samples are not flushed yet holds none)."""
+    gs, t = loaded.game_set, loaded.tables
+    games, cands = t["games"], t["candidates"]
+    analysed = set(games["game_id"]) if not games.empty else set()
+    logs = {r.log for r in gs.refs}
+    return {"logs": len(logs), "games_kept": len(gs.kept), "games_analysed": len(analysed),
+            "games_kept_not_analysed": len(set(gs.kept) - analysed),
+            "games_without_complete_sample": len({r.game_id for r in gs.incomplete}),
+            "games_from_logs_not_success": sum(1 for g, r in gs.kept.items()
+                                               if g in analysed and r.log_status != "success"),
+            "duplicates_dropped": gs.n_duplicates_dropped, "superseded": len(gs.superseded),
+            "candidates": int(len(cands))}
+
+
+def load_candidates(log_dirs: Iterable[str], cohort: str, *, strict: bool = True) -> pd.DataFrame:
+    """Candidates of the D12 game set (``candidate_set``): the same games, candidate IDs and payloads as
+    analysis/report_outputs.py's ``t['candidates']`` over the same log directories."""
+    loaded = candidate_set(log_dirs, cohort, strict=strict)
+    n = game_set_counts(loaded)
+    print(f"{n['logs']} logs with in-cohort samples: {n['games_analysed']} games, {n['candidates']} candidates "
+          f"(D12 game set: {n['games_from_logs_not_success']} games from logs not marked success, "
+          f"{n['duplicates_dropped']} dropped duplicate copies, {n['superseded']} superseded samples, "
+          f"{n['games_kept_not_analysed']} kept games excluded, {n['games_without_complete_sample']} games without a "
+          "complete sample)", file=sys.stderr)
+    c = loaded.tables["candidates"].reset_index(drop=True)
     if c["candidate_id"].duplicated().any():
-        raise ValueError("duplicate candidate IDs across log directories (same game logged twice?)")
+        raise ValueError("duplicate candidate IDs in the D12 game set (one game entered twice?)")
     return c
 
 
@@ -772,7 +813,7 @@ def _cmd_label(a: argparse.Namespace) -> None:
     rubric, sha = load_rubric()
     with exclusive_dir(out):
         check_manifest(out, sha)
-        cands = load_candidates(a.log_dirs, a.cohort)
+        cands = load_candidates(a.log_dirs, a.cohort, strict=not a.lenient)
         items = plan_items(cands)
         records = read_records(out / "judgements.jsonl")
         todo = pending_items(items, records, rubric_sha256=sha, model_id=JUDGE_MODEL, rubric=rubric)
@@ -812,7 +853,7 @@ def _cmd_sheet(a: argparse.Namespace) -> None:
     out = check_private_path(a.out, "--out")
     with exclusive_dir(out):
         check_manifest(out, sha)
-        cands = load_candidates(a.log_dirs, a.cohort)
+        cands = load_candidates(a.log_dirs, a.cohort, strict=not a.lenient)
         records = read_records(out / "judgements.jsonl")
         write_label_sheet(cands, records, out / "labels.csv", rubric_sha256=sha, rubric=rubric)
         summary = {**coding_summary(cands, records), "rubric_sha256": sha}
@@ -829,7 +870,7 @@ def _cmd_handcheck(a: argparse.Namespace) -> None:
     if a.n is not None:
         print(f"WARNING: --n {a.n} replaces the pre-registered quotas (50 yes + 50 no, or all yes if fewer); log it "
               "in prereg/DEVIATIONS.md", file=sys.stderr)
-    cands = load_candidates(a.log_dirs, a.cohort)
+    cands = load_candidates(a.log_dirs, a.cohort, strict=not a.lenient)
     records = read_records(out / "judgements.jsonl")
     items = plan_items(cands)
     check_provenance(items, records, rubric_sha256=sha, model_id=JUDGE_MODEL, rubric=rubric)
@@ -863,6 +904,10 @@ def main(argv: list[str] | None = None) -> None:
         if logs:
             sp.add_argument("log_dirs", nargs="+")
             sp.add_argument("--cohort", default="confirmatory", choices=("confirmatory", "pilot", "all"))
+            sp.add_argument("--lenient", action="store_true",
+                            help="skip missing directories, unreadable (live) logs and the D12 fail-closed cases "
+                                 "with a warning, as report_outputs --preliminary does (default: fail as "
+                                 "confirmatory report_outputs does)")
         sp.add_argument("--out", default=str(DEFAULT_OUT))
 
     sp = sub.add_parser("label", help="code candidates with the judge model (paid)")

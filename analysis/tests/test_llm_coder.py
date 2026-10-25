@@ -2,14 +2,19 @@
 from __future__ import annotations
 
 import asyncio
+import glob
 import json
+from pathlib import Path
 
 import pandas as pd
 import pytest
 from inspect_ai.model import GenerateConfig, ModelOutput, get_model
 
+from analysis import dataset, game_set
 from analysis import llm_coder as lc
 from analysis.coding import extract_candidates, load_labels, merge_labels
+
+ROOT = Path(__file__).resolve().parents[2]
 
 SECRETS = ("g:ARMSECRET-SHR-PERMITTED:modelsecret:seed1234", "CHAT-MON-SHR", "SHR-PERMITTED", "modelsecret",
            "claude-opus", "seed1234")
@@ -460,7 +465,7 @@ def test_cli_handcheck_defaults_to_prereg_quotas(monkeypatch, tmp_path, capsys):
     runs = _fake_runs(monkeypatch, tmp_path)
     out = runs / "analysis" / "coding"
     cands, _, recs = run_coder(out, cands=many_candidates(), concurrency=4)
-    monkeypatch.setattr(lc, "load_candidates", lambda dirs, cohort: cands)
+    monkeypatch.setattr(lc, "load_candidates", lambda dirs, cohort, **kw: cands)
     lc.main(["handcheck", "logs", "--out", str(out), "--handcheck-dir", str(runs / "analysis" / "hc")])
     printed = capsys.readouterr().out
     assert "yes/" not in printed and "no/" not in printed  # stratum mix stays in the private key
@@ -480,3 +485,141 @@ def test_lone_surrogate_in_completion_does_not_abort_the_run(tmp_path):
     _, sha = rubric()
     sheet = lc.write_label_sheet(cands, recs, tmp_path / "labels.csv", rubric_sha256=sha)
     assert len(load_labels(sheet, cands, allow_unknown=True)) == len(cands)
+
+
+# ------------------------------------------------------------------------------- candidate set = the D12 game set
+def write_log(path, samples, *, status: str, created: str, eval_id: str) -> Path:
+    """A real Inspect .eval log (no events or messages) holding the given samples."""
+    from inspect_ai.log import EvalConfig, EvalDataset, EvalLog, EvalSpec, EvalStats, write_eval_log
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    spec = EvalSpec(created=created, task="shc-games", model="mockllm/model", config=EvalConfig(), eval_id=eval_id,
+                    dataset=EvalDataset(samples=len(samples), sample_ids=[s.id for s in samples]))
+    write_eval_log(EvalLog(eval=spec, status=status, samples=samples, stats=EvalStats(started_at=created)), str(path))
+    return path
+
+
+def eval_sample(meta: dict, *, completed_at: str | None, error: str | None = None):
+    """One game sample as the harness logs it: everything in metadata, the result under metadata['result']."""
+    from inspect_ai.log import EvalError, EvalSample
+    return EvalSample(id=meta["game_id"], epoch=1, input="play", target="", metadata=meta, completed_at=completed_at,
+                      error=EvalError(message=error, traceback="", traceback_ansi="") if error else None)
+
+
+def game_meta(arm: str, seed: int, text: str, *, rounds: int = 2, keep_rounds: int | None = None) -> dict:
+    """A complete synthetic game whose chat message and scratch note carry `text` (so copies can be told apart)."""
+    gid = f"deep:m1:core-pricing:{arm}:{seed}"
+    rows = [{"t": t, "firm": f, "order": o, "action": 10.0 + t, "scripted": False, "parse_failed": False,
+             "collusion_index": 0.0} for t in range(1, rounds + 1) for o, f in enumerate("AB", 1)]
+    if keep_rounds is not None:
+        rows = [r for r in rows if r["t"] <= keep_rounds]
+    note = f"{text} note"
+    result = {"host": "hostA", "rows": rows, "calls": [], "gate": [], "outputs": {"A": [], "B": []},
+              "chat": [{"t": 1, "firm": "A", "recipient": "B", "message": text, "blocked": False}],
+              "chat_deliveries": [{"t": 2, "sent_t": 1, "sender": "A", "recipient": "B", "message": text}],
+              "scratch_events": [{"t": 1, "firm": "B", "uid": 1002, "order": 2, "op": "create",
+                                  "path": "/srv/scratch/note.txt", "content_excerpt": note,
+                                  "size": len(note.encode())}]}
+    return {"game_id": gid, "grid": "deep", "model_label": "m1", "model_id": "x/m1", "effort": "low",
+            "scenario_id": "core-pricing", "engine": "pricing", "arm": arm, "seed": seed, "rounds": rounds,
+            "result": result}
+
+
+def d12_logs(root: Path):
+    """Two hosts' log directories after operator stops and relaunches.
+
+    mac/A (16:54, 'started'): X complete 17:05 (kept), W errored partial (superseded), P complete only here.
+    mac/B (17:16, 'cancelled'): Y complete 17:50 (dropped: C's copy finished first), Q complete only here.
+    vps/C (17:35, 'success'): X complete 18:00 (dropped), W complete, Y complete 17:40 (kept)."""
+    X, W, P, Y, Q = (("SHR-PERMITTED", 1000), ("SHR-AWARE", 1000), ("CHAT-SHR", 1000), ("ISO-PERMITTED", 1000),
+                     ("CHAT-ISO", 1000))
+    mac, vps = root / "full" / "logs-mac", root / "remote" / "vps" / "logs-vps"
+    write_log(mac / "2026-10-25T16-54-37_A.eval", [
+        eval_sample(game_meta(*X, "kept copy of X"), completed_at="2026-10-25T17:05:00+00:00"),
+        eval_sample(game_meta(*W, "errored copy of W", keep_rounds=1), completed_at=None, error="CancelledError()"),
+        eval_sample(game_meta(*P, "only copy of P"), completed_at="2026-10-25T17:10:00+00:00")],
+        status="started", created="2026-10-25T16:54:37+00:00", eval_id="evA")
+    write_log(mac / "2026-10-25T17-16-48_B.eval", [
+        eval_sample(game_meta(*Y, "dropped copy of Y"), completed_at="2026-10-25T17:50:00+00:00"),
+        eval_sample(game_meta(*Q, "only copy of Q"), completed_at="2026-10-25T17:30:00+00:00")],
+        status="cancelled", created="2026-10-25T17:16:48+00:00", eval_id="evB")
+    write_log(vps / "2026-10-25T17-35-00_C.eval", [
+        eval_sample(game_meta(*X, "dropped copy of X"), completed_at="2026-10-25T18:00:00+00:00"),
+        eval_sample(game_meta(*W, "complete copy of W"), completed_at="2026-10-25T18:01:00+00:00"),
+        eval_sample(game_meta(*Y, "kept copy of Y"), completed_at="2026-10-25T17:40:00+00:00")],
+        status="success", created="2026-10-25T17:35:00+00:00", eval_id="evC")
+    ids = {k: f"deep:m1:core-pricing:{a}:{s}" for k, (a, s) in zip("XWPYQ", (X, W, P, Y, Q))}
+    kept_text = {"X": "kept copy of X", "W": "complete copy of W", "P": "only copy of P", "Y": "kept copy of Y",
+                 "Q": "only copy of Q"}
+    return [str(mac), str(vps)], ids, kept_text
+
+
+def test_candidates_are_report_outputs_candidates_of_the_d12_kept_set(tmp_path):
+    from analysis import report_outputs as ro
+    dirs, ids, kept_text = d12_logs(tmp_path)
+    cands = lc.load_candidates(dirs, "confirmatory")
+    t = ro.load_logs(ro.Ctx(cfg=ro.Config(log_dirs=dirs, out=str(tmp_path / "ro"))))      # confirmatory (strict)
+    ro_c = t["candidates"]
+    assert len(cands) == len(ro_c) == 2 * len(ids) and cands["candidate_id"].is_unique
+    both = cands.merge(ro_c, on="candidate_id", suffixes=("", "_ro"), validate="one_to_one")
+    assert len(both) == len(cands) and (both["payload"] == both["payload_ro"]).all()
+    assert set(cands["game_id"]) == set(ids.values()) == set(t["games"]["game_id"])
+    # every game's candidates are coding.extract_candidates of its kept copy: the ids, and the kept copy's payloads
+    for key, gid in ids.items():
+        _, _, _, arm, seed = gid.split(":")
+        meta = game_meta(arm, int(seed), kept_text[key])
+        want = extract_candidates({k: v for k, v in meta.items() if k != "result"}, meta["result"])
+        got = cands[cands["game_id"] == gid].set_index("candidate_id").sort_index()
+        assert got.index.tolist() == sorted(want["candidate_id"])
+        assert (got["payload"] == want.set_index("candidate_id").sort_index()["payload"]).all()
+        assert got["payload"].str.contains(kept_text[key]).all()
+    # whatever the directory order; and the label sheet passes report_outputs' importer for its candidate set
+    assert set(lc.load_candidates(list(reversed(dirs)), "confirmatory")["candidate_id"]) == set(cands["candidate_id"])
+    sheet = lc.write_label_sheet(cands, {}, tmp_path / "labels.csv")
+    assert len(load_labels(sheet, ro_c, allow_unknown=True)) == len(ro_c)
+    # the regression: one dataset.load per directory dropped every game of the logs not marked success, and coded
+    # the copy of X that D12 drops
+    old = pd.concat([dataset.load(d, allow_exclusions=True)["candidates"] for d in dirs], ignore_index=True)
+    assert set(old["game_id"]) == {ids["X"], ids["W"], ids["Y"]}
+    assert old.loc[old["game_id"] == ids["X"], "payload"].str.contains("dropped copy of X").all()
+
+
+def test_candidate_set_counts_and_strictness(tmp_path, capsys):
+    dirs, ids, _ = d12_logs(tmp_path)
+    loaded = lc.candidate_set(dirs, "confirmatory")
+    n = lc.game_set_counts(loaded)
+    assert n == {"logs": 3, "games_kept": 5, "games_analysed": 5, "games_kept_not_analysed": 0,
+                 "games_without_complete_sample": 0, "games_from_logs_not_success": 3, "duplicates_dropped": 2,
+                 "superseded": 1, "candidates": 10}
+    assert {g: Path(game_set.short_log(r.log)).name[-6:] for g, r in loaded.game_set.kept.items()} == {
+        ids["X"]: "A.eval", ids["W"]: "C.eval", ids["P"]: "A.eval", ids["Y"]: "C.eval", ids["Q"]: "B.eval"}
+    lc.load_candidates(dirs, "confirmatory")
+    assert "5 games, 10 candidates" in capsys.readouterr().err
+    missing = str(tmp_path / "nowhere")
+    with pytest.raises(ValueError, match="log directory missing"):
+        lc.load_candidates([*dirs, missing], "confirmatory")
+    assert len(lc.load_candidates([*dirs, missing], "confirmatory", strict=False)) == 10
+    assert "missing, skipped" in capsys.readouterr().err
+
+
+REAL_DIRS = sorted(glob.glob(str(ROOT / "runs" / "full" / "logs-*"))
+                   + glob.glob(str(ROOT / "runs" / "remote" / "*" / "logs-*")))
+
+
+@pytest.mark.skipif(not REAL_DIRS, reason="no local confirmatory log directories")
+def test_counts_only_candidates_cover_the_real_kept_games():
+    """On runs/full/logs-* and runs/remote/*/logs-* (lenient: live logs may be mid-flush): the candidates are those of
+    the D12 kept copies, and every kept game is analysed or a recorded exclusion of its kept copy. Only counts are
+    printed (run with -s); no payload, label or outcome is read out."""
+    loaded = lc.candidate_set(REAL_DIRS, "confirmatory", strict=False)
+    n = lc.game_set_counts(loaded)
+    print("\n" + json.dumps(n))
+    gs, t = loaded.game_set, loaded.tables
+    games, cands, ex = t["games"], t["candidates"], t["exclusions"]
+    analysed = set(games["game_id"])
+    assert cands["candidate_id"].is_unique and set(cands["game_id"]) <= analysed <= set(gs.kept)
+    assert games["game_id"].is_unique
+    assert all(gs.kept[g].log == str(lg) for g, lg in zip(games["game_id"], games["log"]))   # the kept copies
+    kept_excluded = set(ex.loc[ex["selection"] == game_set.KEPT, "game_id"]) if len(ex) else set()
+    assert set(gs.kept) == analysed | kept_excluded                     # every kept game is covered
+    assert n["games_kept"] == len(game_set.scan(REAL_DIRS).kept)        # the same game count as the D12 audit

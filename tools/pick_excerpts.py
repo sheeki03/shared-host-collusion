@@ -13,8 +13,15 @@ the timestamp of record. The script was developed and tested on pilot logs only 
 whole selection procedure; nothing is ranked by how interesting its content is, and a changed rule after confirmatory
 data were seen must be reported as a deviation.
 
-Eligible games: confirmatory only (grid != "pilot", seed < 9000), sample without error, result rows present. A
-game_id complete in more than one log is taken once, from the first file in sorted path order.
+Eligible games: confirmatory only (the cohort of analysis/dataset.py: grid deep, pairs, broad or scenario, seed
+1000-8999), and of each game only the copy that the outcome-blind duplicate rule of prereg/DEVIATIONS.md D12 keeps
+(analysis/game_set.py, the copy analysis/report_outputs.py uses), applied over all the given logs at once: a complete
+sample (no sample error, every planned firm-round) from a log of any status; of a game completed more than once, the
+copy that finished first (ties: earlier log start, then log path). Dropped duplicate copies, superseded (errored or
+partial) samples and second copies of one log are never read for an excerpt. A kept game above the 20% parse-failure
+threshold (a pre-registered exclusion in report_outputs) stays eligible, as under the original rule, which never
+read parse rates. (Until 26 Oct 2026, before any confirmatory excerpt was written, a game complete in several logs
+was taken from the first file in sorted path order, which could be a copy D12 drops.)
 `--allow-pilot` admits pilot games for testing; the output is then marked as pilot data, not for the report.
 
 Fixed game order ("first"): grid (deep, pairs, broad, scenario), then model configuration in the order listed in
@@ -65,6 +72,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from analysis import dataset, game_set  # noqa: E402
 from harness import arms as arms_mod  # noqa: E402
 
 MAX_OUT = 1200
@@ -127,15 +135,18 @@ def game_key(meta: dict) -> tuple:
             SCEN_ORDER.get(meta.get("scenario_id"), 99), int(meta.get("seed", 0)), str(meta.get("game_id")))
 
 
+def cohort(allow_pilot: bool) -> str:
+    return "all" if allow_pilot else "confirmatory"
+
+
 def eligible(meta: dict, allow_pilot: bool) -> bool:
-    if allow_pilot:
-        return True
-    return meta.get("grid") != "pilot" and int(meta.get("seed", 10**9)) < arms_mod.PILOT_SEED_BASE
+    """The cohort of the D12 game set (analysis/dataset.py's confirmatory cohort, or every game for testing)."""
+    return dataset._cohort_match(meta, cohort(allow_pilot))
 
 
 class Game:
-    def __init__(self, meta: dict, result: dict):
-        self.meta, self.r = meta, result
+    def __init__(self, meta: dict, result: dict, log: str | None = None):
+        self.meta, self.r, self.log = meta, result, log
         self.rows = result.get("rows") or []
         self.cmap = canary_map(self.rows)
         self.row = {(x["firm"], x["t"]): x for x in self.rows}
@@ -322,38 +333,95 @@ def render_e3(g: Game, firm: str, first: int, i: int, tier: str) -> str:
 
 
 # ----------------------------------------------------------------------------------------------- driver
-def iter_games(paths: list[str], allow_pilot: bool, stats: dict):
-    from inspect_ai.log import list_eval_logs, read_eval_log_samples
+def _local(name: str) -> str:
+    """A log name (file URI as list_eval_logs gives it, or a path) as an absolute local path, to read a file once."""
+    s = str(name)
+    return str(Path(s[len("file://"):] if s.startswith("file://") else s).resolve())
 
-    files = []
+
+def log_names(paths: list[str]) -> list[str]:
+    """Every .eval log under the given directories (list_eval_logs names) and the given files, each once, sorted."""
+    from inspect_ai.log import list_eval_logs
+
+    names: dict[str, str] = {}
     for p in paths:
         pp = Path(p)
-        if pp.is_dir():
-            files += [info.name for info in list_eval_logs(str(pp))]
-        elif pp.exists():
-            files.append(str(pp))
-    seen: set[str] = set()
-    for f in sorted(set(files)):
+        got = [str(info.name) for info in list_eval_logs(str(pp))] if pp.is_dir() else ([str(pp)] if pp.exists() else [])
+        for n in got:
+            names.setdefault(_local(n), n)
+    return sorted(names.values())
+
+
+def _read(name: str):
+    from inspect_ai.log import read_eval_log
+    return game_set.read_log(read_eval_log, name)     # without the per-sample event and message streams
+
+
+def _usable(s) -> bool:
+    res = (s.metadata or {}).get("result")
+    return not s.error and isinstance(res, dict) and bool(res.get("rows"))
+
+
+def iter_games(paths: list[str], allow_pilot: bool, stats: dict):
+    """Yield the D12 kept copy of every eligible game (module docstring), in sorted log order.
+
+    Two reads of each log: the first gives every sample's identity, status, completeness and timestamps to
+    analysis/game_set.py (lenient: an unreadable log is listed and skipped, the cases strict mode would refuse are
+    listed in stats['notes']); the second reads the kept copies only."""
+    names = log_names(paths)
+    refs: list = []
+    seen: list[tuple[str, str, bool, bool]] = []          # (log, game_id, usable, eligible) of every sample read
+    for name in names:
         try:
-            for s in read_eval_log_samples(f, all_samples_required=False):
-                stats["samples"] += 1
-                meta = dict(s.metadata or {})
-                result = meta.pop("result", None)
-                if s.error or not isinstance(result, dict) or not result.get("rows"):
-                    stats["skipped_incomplete"] += 1
-                    continue
-                if not eligible(meta, allow_pilot):
-                    stats["skipped_pilot"] += 1
-                    continue
-                gid = str(meta.get("game_id"))
-                if gid in seen:
-                    stats["duplicates"] = stats.get("duplicates", 0) + 1
-                    continue
-                seen.add(gid)
-                stats["eligible"] += 1
-                yield Game(meta, result)
+            log = _read(name)
         except Exception as exc:  # noqa: BLE001  (a log still being written may be unreadable; report and go on)
-            stats["unreadable"].append(f"{f}: {type(exc).__name__}: {str(exc)[:120]}")
+            stats["unreadable"].append(f"{name}: {type(exc).__name__}: {str(exc)[:120]}")
+            continue
+        for s in log.samples or []:
+            meta = s.metadata or {}
+            ref = game_set.sample_ref(log, name, s, cohort=cohort(allow_pilot))
+            if ref is not None:
+                refs.append(ref)
+            seen.append((name, str(meta.get("game_id")), _usable(s), eligible(meta, allow_pilot)))
+    gs = game_set.select(refs, strict=False)
+    stats.setdefault("notes", []).extend(gs.notes)
+    kept_logs: set[str] = set()
+    counted: set[tuple[str, str]] = set()
+    for name, gid, usable, ok in seen:
+        stats["samples"] += 1
+        st = gs.status(name, gid)
+        if not usable:
+            stats["skipped_incomplete"] += 1
+        elif not ok:
+            stats["skipped_pilot"] += 1
+        elif st == game_set.KEPT and (name, gid) not in counted:
+            counted.add((name, gid))
+            kept_logs.add(name)
+        elif st in (game_set.DUPLICATE, game_set.KEPT):   # a dropped copy (or the same game again in one log)
+            stats["duplicates"] = stats.get("duplicates", 0) + 1
+        elif st == game_set.LOG_COPY:
+            stats["log_copies"] = stats.get("log_copies", 0) + 1
+        else:                                             # superseded or incomplete under D12
+            stats["skipped_incomplete"] += 1
+    done: set[str] = set()
+    for name in names:
+        if name not in kept_logs:
+            continue
+        try:
+            log = _read(name)
+        except Exception as exc:  # noqa: BLE001
+            stats["unreadable"].append(f"{name}: {type(exc).__name__}: {str(exc)[:120]}")
+            continue
+        for s in log.samples or []:
+            meta = dict(s.metadata or {})
+            gid = meta.get("game_id")
+            if not isinstance(gid, str) or gid in done or gs.status(name, gid) != game_set.KEPT \
+                    or not _usable(s) or not eligible(meta, allow_pilot):
+                continue
+            done.add(gid)
+            stats["eligible"] += 1
+            result = meta.pop("result")
+            yield Game(meta, result, log=name)
 
 
 def pick(games) -> dict[int, dict]:
@@ -395,8 +463,12 @@ def write(picked: dict, stats: dict, out: Path, allow_pilot: bool, sources: list
     if allow_pilot:
         md += ["**PILOT DATA (seeds 9000+): development test only, not for the report.**", ""]
     md += [f"Sources: {', '.join(sources)}. Samples read {stats['samples']}, eligible games {stats['eligible']}, "
-           f"skipped (incomplete or errored) {stats['skipped_incomplete']}, skipped (pilot) {stats['skipped_pilot']}, "
-           f"duplicate game ids skipped {stats.get('duplicates', 0)}, unreadable files {len(stats['unreadable'])}.", ""]
+           f"skipped (incomplete, errored or superseded) {stats['skipped_incomplete']}, skipped (pilot) "
+           f"{stats['skipped_pilot']}, dropped duplicate copies (D12: the copy that finished first is used) "
+           f"{stats.get('duplicates', 0)}, second copies of a log {stats.get('log_copies', 0)}, unreadable files "
+           f"{len(stats['unreadable'])}.", ""]
+    if stats.get("notes"):
+        md += ["Game-set notes (analysis/game_set.py, lenient):", ""] + [f"- {n}" for n in stats["notes"]] + [""]
     for n in (1, 2, 3):
         md.append(f"<!-- EXCERPT:{n} BEGIN -->")
         if n in picked:
