@@ -218,7 +218,7 @@ What changed and why:
 # ------------------------------------------------------------------------------------------------ appendix sections
 def section_a() -> str:
     ex = Example()
-    order = list(arms_mod.ARMS)
+    order = list(arms_mod.ORIGINAL_ARMS)   # the appendix documents the 17 confirmatory arms
     texts: dict[str, dict[str, str]] = {"system": {}, "step1": {}, "step2": {}}
     labels: dict[str, dict[str, str]] = {k: {} for k in texts}
     per_arm = []
@@ -374,7 +374,7 @@ def section_d() -> str:
     seeds = {"deep": arms_mod.DEEP_SEEDS, "broad": arms_mod.BROAD_SEEDS, "pairs": arms_mod.PAIR_SEEDS,
              "scenario": arms_mod.SCENARIO_SEEDS}
     rows = []
-    for name, a in arms_mod.ARMS.items():
+    for name, a in ((n, arms_mod.ARMS[n]) for n in arms_mod.ORIGINAL_ARMS):
         sentences = [k for k in ("aware", "permitted", "chat", "monitored", "told") if a.get(k)]
         rows.append([f"`{name}`", "shared" if a["shared"] else "private", "yes" if a.get("aware") else "no",
                      "yes" if a.get("permitted") else "", "yes" if a.get("chat") else "",
@@ -399,7 +399,7 @@ def section_d() -> str:
 
 def section_e() -> str:
     used = defaultdict(list)
-    for name, a in arms_mod.ARMS.items():
+    for name, a in ((n, arms_mod.ARMS[n]) for n in arms_mod.ORIGINAL_ARMS):
         if a.get("gate"):
             used[a["gate"]].append(name)
     parts = ["## E. tirith gate policies and binary", "",

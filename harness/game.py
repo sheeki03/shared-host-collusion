@@ -17,6 +17,14 @@ through shell.run (pipefail, run once, leftover processes killed afterwards).
 Draws, move order and canaries come from separate seeded streams, so arms with the same seed are matched.
 Every paid model call goes through the nanogpt provider, which reserves budget before the call and returns a
 reconciled total across attempts (fail closed if absent). Offline self-tests use a scripted mockllm policy.
+
+Extension hooks (prereg/EXTENSIONS.md E4; used only by engines that define them, which no original engine does):
+an engine with `parse_action(scenario_id, value) -> (action, reason)` replaces the generic step-2 number check and
+conversion, and one with `fallback_action(scenario_id, draw, firm, previous)` replaces the previous-action/midpoint
+fallback. engines/secret.py uses them for a strict integer guess and a "no guess" fallback (payoff 0, flagged);
+its docstring explains why. The public bulletin's file name and description come from prompts.bulletin(framing):
+market_report.json for every original framing, results.json for SX-codes. The SX arms run only with SX-codes and
+SX-codes only with the SX arms.
 """
 from __future__ import annotations
 
@@ -37,7 +45,7 @@ from inspect_ai.solver import Generate, TaskState, solver
 
 from engines.base import FIRMS
 from harness import gate, prompts, shell, traces
-from harness.arms import ARMS
+from harness.arms import ARMS, SX_ARMS
 from harness.sandbox_env import HOME, SCRATCH, UID
 
 try:  # registers the "nanogpt" provider; offline tests run without it
@@ -215,6 +223,9 @@ class Game:
     def __init__(self, spec: dict, monitor_model: str, subject_override: str | None):
         self.spec = spec
         self.arm = ARMS[spec["arm"]]
+        if (spec["arm"] in SX_ARMS) != (spec["scenario_id"] == prompts.SX_SCENARIO):
+            raise ValueError(f"arm {spec['arm']} and scenario {spec['scenario_id']} cannot be combined "
+                             f"(the SX arms run only with {prompts.SX_SCENARIO}, and it only with them)")
         self.engine = load_engine(spec["engine"])
         if hasattr(self.engine, "reset"):
             self.engine.reset(spec["seed"])
@@ -272,9 +283,10 @@ class Game:
             self.snapshot_log.append({"t": 0, "firm": f, "order": 0, "changed": changed, "gone": gone})
 
     async def write_bulletin(self) -> None:
-        body = json.dumps({"description": "Public market report. Completed rounds only.",
+        name, description = prompts.bulletin(self.framing)
+        body = json.dumps({"description": description,
                            "rounds": round_floats(self.public_rows, self.decimals)}, indent=1)
-        await shell.write_bulletin("market_report.json", body, shared=bool(self.arm["shared"]))
+        await shell.write_bulletin(name, body, shared=bool(self.arm["shared"]))
 
     async def write_inbox(self, t: int, draw) -> None:
         for f in FIRMS:
@@ -369,10 +381,14 @@ class Game:
         cmds, cmds_capped = parse_commands(obj1 or {}, "commands", MAX_CMDS_STEP1)
         results = await self.run_commands(firm, cmds, t, "step1")
 
-        lo, hi = self.engine.action_bounds(self.spec["scenario_id"], draw, firm)
+        sid = self.spec["scenario_id"]
+        lo, hi = self.engine.action_bounds(sid, draw, firm)
         key = self.framing.action_name
+        parse_action = getattr(self.engine, "parse_action", None)   # engine-defined strict format (SX only)
 
         def v2(obj):
+            if parse_action is not None:
+                return parse_action(sid, obj.get(key))[1]
             x = parse_number(obj.get(key))
             if x is None:
                 return f"'{key}' must be a finite number"
@@ -382,11 +398,16 @@ class Game:
         msgs.append(ChatMessageUser(content=prompts.step2_user(self.framing, results, (lo, hi), self.arm)))
         obj2, att2, why2 = await self.ask_json(msgs, firm, t, "step2", v2)
         fallback = obj2 is None
-        if fallback:
+        if fallback and hasattr(self.engine, "fallback_action"):     # SX: no guess (payoff 0), still flagged
+            action = self.engine.fallback_action(sid, draw, firm, self.last_action[firm])
+        elif fallback:
             prev = self.last_action[firm]
             action = prev if prev is not None and lo <= prev <= hi else (lo + hi) / 2
+        elif parse_action is not None:
+            action = parse_action(sid, obj2.get(key))[0]
         else:
             action = float(parse_number(obj2.get(key)))
+        if not fallback:
             self.plans[firm] = str(obj2.get("plans") or "")[: prompts.NOTE_FIELD_CAP]
             self.insights[firm] = str(obj2.get("insights") or "")[: prompts.NOTE_FIELD_CAP]
         after, after_capped = parse_commands(obj2 or {}, "after_commands", MAX_CMDS_AFTER)

@@ -5,6 +5,14 @@ Usage examples (from repo root, venv python):
   .venv/bin/python -m harness.run --plan pilot-smoke  --cap 40 --concurrency 12
   .venv/bin/python -m harness.run --plan full --grid deep --cap 400 --previous-cap 40 \
     --raise-cap-reason 'owner-approved post-pilot funding' --concurrency 20
+  .venv/bin/python -m harness.run --plan ext --ext-grid all --cap 1 --dry-run      # the 216 extension games
+
+Extensions (prereg/EXTENSIONS.md): `--plan ext --ext-grid {rep,long,any,sx,all}` selects the pre-declared extension
+games of harness/arms.py::ext_design() (144 / 24 / 16 / 32; 216 for all). Their ids start with `ext-` and never
+collide with full_design(). They write specs to runs/ext/, log to runs/ext/logs and use runs/ext/ledger.jsonl unless
+--log-dir / --ledger say otherwise (never the confirmatory runs/full or runs/ledger.jsonl defaults). With
+`--ext-grid all` the 100-round ext-long games come first (the critical path), then the other grids interleaved.
+--shard-file, --exclude-ids-file, --models and --arms work as for the other plans; --grid does not apply.
 
 Budget: every subject/monitor call reserves the full advertised input-context cost plus bounded output under the
 pinned price table before sending, then settles the provider-reported charge. This is a conservative local admission
@@ -20,8 +28,8 @@ import random
 from collections import defaultdict
 from pathlib import Path
 
-from harness.arms import (ARMS, BROAD, CORE_ROUNDS, DEEP, PAIRS, PILOT_SEED_BASE, SCENARIOS, GameSpec,
-                          full_design)
+from harness.arms import (BROAD, CORE_ROUNDS, DEEP, EXT_GRID_NAMES, ORIGINAL_ARMS, PAIRS, PILOT_SEED_BASE,
+                          SCENARIOS, GameSpec, ext_design, full_design)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -143,7 +151,7 @@ def pilot_smoke() -> list[GameSpec]:
     """5-round smoke games for every arm on one inexpensive model, plus one full 40-round game for prompt growth."""
     label, mid, effort = ("glm-5.3", "z-ai/glm-5.3", "low")
     out = [GameSpec(f"pilot-smoke:{label}:{arm}", "pilot", label, mid, effort, "core-pricing", "pricing", arm,
-                    PILOT_SEED_BASE + 1, 5) for arm in ARMS]
+                    PILOT_SEED_BASE + 1, 5) for arm in ORIGINAL_ARMS]
     out.append(GameSpec(f"pilot-full:{label}:SHR-AWARE", "pilot", label, mid, effort, "core-pricing", "pricing",
                         "SHR-AWARE", PILOT_SEED_BASE + 2, CORE_ROUNDS))
     for scen, engine in SCENARIOS.items():
@@ -152,13 +160,28 @@ def pilot_smoke() -> list[GameSpec]:
     return out
 
 
-def select(plan: str, grid: str | None, models: list[str] | None, arms: list[str] | None) -> list[GameSpec]:
+def ext_plan(ext_grid: str) -> list[GameSpec]:
+    """The pre-declared extension games of one grid or all four, checked against the confirmatory ids."""
+    specs = ext_design(ext_grid)
+    ids = [s.game_id for s in specs]
+    if len(set(ids)) != len(ids):
+        raise SystemExit("duplicate extension game ids")
+    clash = set(ids) & {s.game_id for s in full_design()}
+    if clash or not all(s.grid.startswith("ext-") and s.game_id.startswith(s.grid + ":") for s in specs):
+        raise SystemExit(f"extension ids must be ext-* and disjoint from full_design(); clash {sorted(clash)[:3]}")
+    return specs
+
+
+def select(plan: str, grid: str | None, models: list[str] | None, arms: list[str] | None,
+           ext_grid: str | None = None) -> list[GameSpec]:
     if plan == "pilot-probes":
         specs = pilot_probes()
     elif plan == "pilot-smoke":
         specs = pilot_smoke()
     elif plan == "full":
         specs = full_design()
+    elif plan == "ext":
+        specs = ext_plan(ext_grid or "all")
     else:
         raise SystemExit(f"unknown plan {plan}")
     if grid:
@@ -167,17 +190,23 @@ def select(plan: str, grid: str | None, models: list[str] | None, arms: list[str
         specs = [s for s in specs if s.model_label in models]
     if arms:
         specs = [s for s in specs if s.arm in arms]
+    if plan == "ext":   # prereg/EXTENSIONS.md section 9: the 100-round games are launched first
+        return interleave([s for s in specs if s.grid == "ext-long"]) + \
+            interleave([s for s in specs if s.grid != "ext-long"])
     return interleave(specs)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--plan", required=True, choices=["pilot-probes", "pilot-smoke", "full"])
+    ap.add_argument("--plan", required=True, choices=["pilot-probes", "pilot-smoke", "full", "ext"])
     ap.add_argument("--grid", choices=["deep", "broad", "pairs", "scenario"])
+    ap.add_argument("--ext-grid", choices=[*EXT_GRID_NAMES, "all"],
+                    help="with --plan ext (required there): one pre-declared extension grid, or all four")
     ap.add_argument("--models", nargs="*")
     ap.add_argument("--arms", nargs="*")
     ap.add_argument("--cap", type=float, required=True, help="hard USD cap for this ledger")
-    ap.add_argument("--ledger", default=str(ROOT / "runs" / "ledger.jsonl"))
+    ap.add_argument("--ledger", default=None,
+                    help="default runs/ledger.jsonl (runs/ext/ledger.jsonl with --plan ext)")
     ap.add_argument("--init-ledger", action="store_true", help="create a new ledger once; never resets existing spend")
     ap.add_argument("--previous-cap", type=float, help="recorded cap before an audited increase")
     ap.add_argument("--raise-cap-reason", help="audited reason for increasing --previous-cap to --cap")
@@ -189,9 +218,18 @@ def main() -> None:
     a = ap.parse_args()
     if a.concurrency < 1:
         ap.error("--concurrency must be positive")
+    ext = a.plan == "ext"
+    if ext and not a.ext_grid:
+        ap.error("--plan ext needs --ext-grid {" + ",".join([*EXT_GRID_NAMES, "all"]) + "}")
+    if a.ext_grid and not ext:
+        ap.error("--ext-grid applies only to --plan ext")
+    if ext and a.grid:
+        ap.error("--grid does not apply to --plan ext (use --ext-grid)")
+    if a.ledger is None:
+        a.ledger = str(ROOT / "runs" / "ext" / "ledger.jsonl") if ext else str(ROOT / "runs" / "ledger.jsonl")
 
-    specs = select(a.plan, a.grid, a.models, a.arms)
-    tag = a.plan if a.plan != "full" else f"full-{a.grid or 'all'}"
+    specs = select(a.plan, a.grid, a.models, a.arms, a.ext_grid)
+    tag = f"ext-{a.ext_grid}" if ext else (a.plan if a.plan != "full" else f"full-{a.grid or 'all'}")
     if a.shard_file:
         shard = json.loads(Path(a.shard_file).read_text())
         by_id = {s.game_id: s for s in specs}
@@ -204,11 +242,17 @@ def main() -> None:
         done = set(json.loads(Path(a.exclude_ids_file).read_text()))
         specs = [s for s in specs if s.game_id not in done]
         tag += "-resume"
-    run_dir = ROOT / "runs" / ("pilot" if a.plan.startswith("pilot") else "full")
+    run_dir = ROOT / "runs" / ("ext" if ext else "pilot" if a.plan.startswith("pilot") else "full")
     run_dir.mkdir(parents=True, exist_ok=True)
     spec_path = run_dir / f"specs_{tag}.json"
     spec_path.write_text(json.dumps([s.to_dict() for s in specs], indent=1))
     print(f"{len(specs)} games -> {spec_path}")
+    if ext:
+        per = defaultdict(int)
+        for s in specs:
+            per[s.grid] += 1
+        print("per grid: " + ", ".join(f"ext-{n} {per[f'ext-{n}']}" for n in EXT_GRID_NAMES)
+              + f"; rounds {sum(s.rounds for s in specs):,}")
     if a.dry_run:
         return
 
