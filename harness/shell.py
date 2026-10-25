@@ -1,16 +1,13 @@
 """Shell runner for the firm sandboxes (H2).
 
 Agent commands
-- `run(firm, cmd)` executes `bash -o pipefail -c <cmd>` once, as the firm's uid:gid, in /home/agent, through Inspect's
-  `sandbox(service).exec(..., timeout=timeout, timeout_retry=False)`. Inspect is never allowed to re-run it: with
-  `timeout_retry=False` neither its timeout retry nor its "CLI exited before reading stdin" retry fires, and this
-  module never retries anything itself.
-- On timeout Inspect's in-container `/usr/bin/timeout -k 5s` kills the command's process group and raises
-  TimeoutError; the result then has exit 124, `timed_out=True` and whatever partial output Inspect kept.
-- After every command (finished or timed out), a root harness reaper identifies only processes with this firm's
-  numeric UID inside its isolated container, kills them, then verifies none runnable remain. Unlike a same-UID
-  `kill -KILL -1`, this does not kill Inspect's timeout wrapper. A failure makes the game abort before another
-  private-data write.
+- `run(firm, cmd)` makes one Inspect/Docker exec on the normal path. A root supervisor passes the command as a
+  *positional argument* (never interpolated into its own shell), drops to the firm's uid:gid with a clean environment,
+  executes `bash -o pipefail -c <cmd>` once under an inner timeout, then reaps and verifies all firm-UID processes
+  before returning. The agent itself has no effective capabilities. Inspect has `timeout_retry=False`.
+- The supervisor adds a status marker only after cleanup; Python removes it from the agent's stderr. Missing or
+  malformed markers, failed cleanup, or an outer Inspect timeout fail closed and trigger a separate best-effort
+  root reaper before the game aborts. The `reap=False` test path deliberately uses the old direct agent exec.
 - Agents see stdout and stderr each cut at 2,000 characters with a marker; `output` is the combined agent view
   (stdout, then "[stderr]" and stderr), also cut at 2,000. The untruncated streams are kept for research up to 64 KB
   each in `raw_stdout` / `raw_stderr`.
@@ -35,6 +32,7 @@ DEFAULT_TIMEOUT = 10
 ROOT_TIMEOUT = 60
 AGENT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 _BULLETIN_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+_SUPERVISOR_MARKER = "\n__SHC_SUPERVISOR_STATUS__:"
 
 
 def _cut(text: str, limit: int) -> tuple[str, bool]:
@@ -59,17 +57,7 @@ def agent_env(firm: str) -> dict[str, str]:
     return {"HOME": HOME, "USER": USERNAME[firm], "LOGNAME": USERNAME[firm], "PATH": AGENT_PATH}
 
 
-async def _reap(firm: str) -> bool:
-    """Kill only the firm's UID from a root wrapper, then verify no runnable process remains.
-
-    Running ``kill -KILL -1`` as the agent also kills Inspect's same-UID timeout wrapper, making a successful cleanup
-    appear to fail. This root process has only CAP_KILL in addition to the harness's normal minimal capabilities;
-    it enumerates /proc and targets the specific numeric firm UID, never root or the rival UID. UID is checked again
-    immediately before each signal. Shell kill has a residual check-to-signal PID-reuse race; its possible effect is
-    limited to the current isolated container, and any cleanup anomaly aborts the game.
-    """
-    script = r"""
-target=$1
+_REAP_FUNCTION = r"""
 runnable_target() {
   [ -r "/proc/$1/status" ] || return 1
   uid= state=
@@ -88,17 +76,59 @@ active() {
     runnable_target "$pid" && printf '%s\n' "$pid"
   done
 }
-for pid in $(active); do
-  # A process may exit after enumeration. Recheck UID immediately before signalling a reused PID.
-  runnable_target "$pid" && kill -KILL "$pid" 2>/dev/null || :
-done
-for i in 1 2 3 4 5; do
-  [ -z "$(active)" ] && exit 0
-  sleep 0.05
-done
-echo 'agent process survived reaper' >&2
-exit 4
+reap_uid() {
+  for pid in $(active); do
+    # A process may exit after enumeration. Recheck UID immediately before signalling a reused PID.
+    runnable_target "$pid" && kill -KILL "$pid" 2>/dev/null || :
+  done
+  for i in 1 2 3 4 5; do
+    [ -z "$(active)" ] && return 0
+    sleep 0.05
+  done
+  echo 'agent process survived reaper' >&2
+  return 4
+}
 """
+
+
+_AGENT_SUPERVISOR = r"""
+target=$1; seconds=$2; agent_name=$3; agent_cmd=$4
+case "$target" in 1001|1002) : ;; *) echo 'bad agent uid' >&2; exit 92 ;; esac
+command -v /usr/bin/setpriv >/dev/null || { echo 'setpriv missing' >&2; exit 93; }
+cd /home/agent || exit 94
+/usr/bin/timeout -k 5s "$seconds" /usr/bin/env -i HOME=/home/agent USER="$agent_name" LOGNAME="$agent_name" \
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  /usr/bin/setpriv --reuid="$target" --regid="$target" --clear-groups --no-new-privs \
+  /bin/bash -o pipefail -c "$agent_cmd"
+agent_status=$?
+__REAPER_FUNCTION__
+reap_uid || exit 95
+printf '\n__SHC_SUPERVISOR_STATUS__:%s\n' "$agent_status" >&2
+exit 0
+""".replace("__REAPER_FUNCTION__", _REAP_FUNCTION)
+
+
+def _supervisor_status(stderr: str) -> tuple[int, str]:
+    """Remove the root-only trailing status marker; any malformed/missing marker fails closed."""
+    head, marker, tail = stderr.rpartition(_SUPERVISOR_MARKER)
+    if not marker or not tail.endswith("\n") or not tail[:-1].isdigit():
+        raise ValueError("supervisor status marker missing or malformed")
+    status = int(tail[:-1])
+    if not 0 <= status <= 255:
+        raise ValueError("supervisor returned an invalid command status")
+    return status, head
+
+
+async def _reap(firm: str) -> bool:
+    """Fallback root reaper for abnormal supervisor/Inspect failures; verify no firm process remains.
+
+    Running ``kill -KILL -1`` as the agent also kills Inspect's same-UID timeout wrapper, making a successful cleanup
+    appear to fail. This root process has only CAP_KILL in addition to the harness's normal minimal capabilities;
+    it enumerates /proc and targets the specific numeric firm UID, never root or the rival UID. UID is checked again
+    immediately before each signal. Shell kill has a residual check-to-signal PID-reuse race; its possible effect is
+    limited to the current isolated container, and any cleanup anomaly aborts the game.
+    """
+    script = "target=$1\n" + _REAP_FUNCTION + "\nreap_uid\n"
     try:
         r = await sandbox(SERVICE[firm]).exec(["/bin/bash", "-c", script, "shc-reap", str(UID[firm])],
                                               user="0:0", cwd="/",
@@ -113,10 +143,28 @@ async def run(firm: str, cmd: str, timeout: int = DEFAULT_TIMEOUT, *, reap: bool
     t0 = time.monotonic()
     timed_out = False
     error = None
+    reaped = None if not reap else False
     bad_text = _argv_error(cmd)
     try:
         if bad_text is not None:  # exec would raise ValueError before running anything; refuse instead of crashing
             code, out, err, error = 126, "", "[command not run: it contains a NUL byte or invalid text]", bad_text
+            if reap:
+                reaped = await _reap(firm)
+        elif reap:
+            r = await sandbox(SERVICE[firm]).exec(
+                ["/bin/bash", "-c", _AGENT_SUPERVISOR, "shc-supervisor", str(UID[firm]), str(timeout),
+                 USERNAME[firm], cmd],
+                user="0:0", cwd="/", timeout=timeout + 20, timeout_retry=False)
+            out, err = r.stdout or "", r.stderr or ""
+            if r.returncode == 0:
+                try:
+                    code, err = _supervisor_status(err)
+                    timed_out = code == 124
+                    reaped = True
+                except ValueError as exc:
+                    code, error = 125, str(exc)
+            else:
+                code, error = 125, f"root supervisor exited {r.returncode}"
         else:
             r = await sandbox(SERVICE[firm]).exec(["bash", "-o", "pipefail", "-c", cmd], user=user_spec(firm),
                                                   cwd=HOME, env=agent_env(firm), timeout=timeout,
@@ -129,8 +177,9 @@ async def run(firm: str, cmd: str, timeout: int = DEFAULT_TIMEOUT, *, reap: bool
         code, out, err, error = 125, str(getattr(exc, "truncated_output", "") or ""), "[output limit exceeded]", repr(exc)
     except UnicodeDecodeError as exc:
         code, out, err, error = 125, "", "[output was not valid UTF-8]", repr(exc)
+    if reap and reaped is False:
+        await _reap(firm)
     secs = round(time.monotonic() - t0, 3)
-    reaped = await _reap(firm) if reap else None
     stdout, t_out = _cut(out, MAX_OUTPUT)
     stderr, t_err = _cut(err, MAX_OUTPUT)
     combined = out + (("\n[stderr]\n" + err) if err.strip() else "")

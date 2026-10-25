@@ -7,9 +7,10 @@ Snapshots
   before the path are numbers or a type letter written by find, the path is the last header field, and neither a path
   nor a link target can contain NUL, so agent-chosen names (tabs, newlines, fake markers) cannot forge records.
   Nothing is parsed out of file contents.
-- Each regular file is then read through `sandbox(service).read_file(path, text=False)`. sha256 is over the whole
-  file; `content` holds the first 64 KB decoded as UTF-8 (None for binary data, in which case `strings` holds its
-  printable ASCII runs so canaries hidden in binary files are still found); `truncated` marks files over 64 KB.
+- Small changed regular files are read together through one bounded `sandbox.exec` using base64-encoded byte paths
+  and content. Large or overflow files use the original per-file read path. sha256 is over the whole file; `content`
+  holds the first 64 KB decoded as UTF-8 (None for binary data, in which case `strings` holds printable ASCII runs);
+  `truncated` marks files over 64 KB.
   A previous record is reused only for harness-owned inbox/bulletin files on non-agent-writable mounts when inode,
   ctime and all other relevant metadata match. This avoids O(T²) historical inbox reads. Agent-writable scratch
   files are always reread, even if metadata looks unchanged, to preserve adversarial trace fidelity.
@@ -33,6 +34,7 @@ and deleted within a turn; those and non-UTF8 display names contribute to "unkno
 from __future__ import annotations
 
 import base64
+import binascii
 import codecs
 import hashlib
 import os
@@ -49,6 +51,10 @@ READ_LIMIT = 64 * 1024
 MAX_FULL_READ = SCRATCH_BYTES                     # no file on the 8m/16m tmpfs mounts holds more real data
 MAX_FILES_READ = 256
 READ_CONCURRENCY = 2
+BATCH_MAX_FILES = 64
+BATCH_MAX_BYTES = 256 * 1024
+BATCH_MAX_PATH_BYTES = 16 * 1024
+BATCH_MAX_OUTPUT = 512 * 1024
 MIN_CONTENT = 32
 MIN_STRINGS_RUN = 6
 RIVAL = {"A": "B", "B": "A"}
@@ -147,6 +153,57 @@ async def _read_head(svc, path: str, n: int, *, path_b64: str | None = None) -> 
     return base64.b64decode(r.stdout, validate=True)
 
 
+async def _read_batch(svc, entries: list[dict]) -> dict[str, tuple[bytes | None, str | None]]:
+    """Read bounded small files in one exec; malformed or partial output aborts the snapshot.
+
+    The only shell arguments are base64 of paths emitted by `find`. No decoded path appears in command text, and
+    output is ASCII base64, so arbitrary path/content bytes cannot forge record boundaries or be lossy in Inspect.
+    """
+    script = r'''
+set -euo pipefail
+fmt=$1; shift
+for encoded in "$@"; do
+  IFS= read -r -d '' path < <(printf '%s' "$encoded" | base64 -d; printf '\0') || true
+  case "$path" in /srv/scratch/*|/home/agent/*) ;; *) exit 3 ;; esac
+  [ -f "$path" ] && [ ! -L "$path" ] || exit 4
+  before=$(find "$path" -maxdepth 0 -printf "$fmt" | base64 -w0)
+  body=$(base64 -w0 < "$path")
+  after=$(find "$path" -maxdepth 0 -printf "$fmt" | base64 -w0)
+  printf '%s\t%s\t%s\t%s\n' "$encoded" "$before" "$body" "$after"
+done
+'''
+    argv = ["/bin/bash", "-o", "pipefail", "-c", script, "shc-batch", FIND_FORMAT,
+            *(e["path_b64"] for e in entries)]
+    r = await svc.exec(argv, user="0:0", cwd="/", timeout=60, timeout_retry=False)
+    if r.returncode != 0:
+        raise RuntimeError(f"snapshot batch read failed (exit {r.returncode}): {r.stderr[:200]}")
+    if r.stderr or len(r.stdout) > BATCH_MAX_OUTPUT:
+        raise RuntimeError("snapshot batch read produced stderr or exceeded its output bound")
+    lines = r.stdout.splitlines()
+    if len(lines) != len(entries):
+        raise RuntimeError(f"snapshot batch read returned {len(lines)} records for {len(entries)} files")
+    out = {}
+    for entry, line in zip(entries, lines):
+        try:
+            encoded, before_b64, payload, after_b64 = line.split("\t")
+            if encoded != entry["path_b64"] or encoded in out:
+                raise ValueError("missing, duplicated or reordered path")
+            data = base64.b64decode(payload.encode("ascii"), validate=True)
+            before = parse_find_output(base64.b64decode(before_b64.encode("ascii"), validate=True))
+            after = parse_find_output(base64.b64decode(after_b64.encode("ascii"), validate=True))
+            if len(before) != 1 or len(after) != 1:
+                raise ValueError("missing metadata surrounding batch read")
+        except (UnicodeEncodeError, ValueError, binascii.Error) as exc:
+            raise RuntimeError(f"malformed snapshot batch record for {entry['path'][:100]!r}") from exc
+        if (before[0]["path_b64"] != encoded or after[0]["path_b64"] != encoded or
+                not _same_identity(entry, before[0]) or not _same_identity(entry, after[0]) or
+                len(data) != entry["size"]):
+            out[encoded] = (None, "metadata or size changed during snapshot batch read")
+        else:
+            out[encoded] = (data, None)
+    return out
+
+
 def _same_identity(entry: dict, prior: dict) -> bool:
     return all(entry.get(k) == prior.get(k) for k in
                ("uid", "size", "mtime", "ctime", "inode", "mode", "type", "link_b64"))
@@ -181,7 +238,28 @@ async def snapshot(firm: str, previous: Mapping[str, dict] | None = None) -> lis
                                        ("sha256", "content", "truncated", "binary", "strings", "read_size", "error")}}
         else:
             changed_files.append(e)
-    to_read = {e["path_b64"] for e in changed_files[:MAX_FILES_READ]}
+    selected = changed_files[:MAX_FILES_READ]
+    to_read = {e["path_b64"] for e in selected}
+    batch: list[dict] = []
+    batch_bytes = batch_path_bytes = 0
+    for e in selected:
+        if not 0 < e["size"] <= READ_LIMIT or len(batch) >= BATCH_MAX_FILES:
+            continue
+        raw_path_len = len(base64.b64decode(e["path_b64"], validate=True))
+        if batch_bytes + e["size"] > BATCH_MAX_BYTES or batch_path_bytes + raw_path_len > BATCH_MAX_PATH_BYTES:
+            continue
+        batch.append(e)
+        batch_bytes += e["size"]
+        batch_path_bytes += raw_path_len
+    # A single file still uses read_file (or the byte-safe fallback), avoiding an extra exec for trivial snapshots.
+    if len(batch) >= 2:
+        contents = await _read_batch(svc, batch)
+        for e in batch:
+            data, error = contents[e["path_b64"]]
+            records[e["path_b64"]] = file_record(e, data, error)
+    else:
+        batch = []
+    batched = {e["path_b64"] for e in batch}
     limiter = anyio.Semaphore(READ_CONCURRENCY)
 
     async def read_one(entry: dict) -> None:
@@ -226,8 +304,8 @@ async def snapshot(firm: str, previous: Mapping[str, dict] | None = None) -> lis
         records[entry["path_b64"]] = file_record(entry, data)
 
     async with anyio.create_task_group() as tg:
-        for e in changed_files:
-            if e["path_b64"] in to_read:
+        for e in selected:
+            if e["path_b64"] in to_read and e["path_b64"] not in batched:
                 tg.start_soon(read_one, e)
     out = []
     for e in entries:

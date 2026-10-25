@@ -232,6 +232,140 @@ def test_snapshot_never_reuses_agent_writable_scratch(monkeypatch):
     assert reads == [path, path]
 
 
+def test_snapshot_batches_small_changed_files_and_preserves_byte_paths(monkeypatch):
+    import asyncio
+    import base64
+    from types import SimpleNamespace
+
+    paths = [b"/srv/scratch/bad\xffname", b"/srv/scratch/ordinary.txt"]
+    bodies = [b"binary\x00evidence B", b"public evidence A"]
+    reads = []
+    exec_kinds = []
+
+    class FakeSandbox:
+        async def exec(self, argv, **kwargs):
+            kind = argv[5]
+            exec_kinds.append(kind)
+            raw = b"".join(f"1001\t{len(body)}\t1.0\t2.0\t{55 + i}\t644\tf\t".encode() + path + b"\0\0"
+                           for i, (path, body) in enumerate(zip(paths, bodies)))
+            if kind == "shc-find":
+                return SimpleNamespace(stdout=base64.b64encode(raw).decode(), returncode=0, stderr="")
+            assert kind == "shc-batch" and kwargs["timeout_retry"] is False
+            assert argv[6] == traces.FIND_FORMAT
+            encoded = argv[7:]
+            assert encoded == [base64.b64encode(path).decode() for path in paths]
+            metadata = [base64.b64encode(piece + b"\0\0").decode() for piece in raw.split(b"\0\0") if piece]
+            lines = [f"{p}\t{m}\t{base64.b64encode(body).decode()}\t{m}"
+                     for p, m, body in zip(encoded, metadata, bodies)]
+            return SimpleNamespace(stdout="\n".join(lines) + "\n", returncode=0, stderr="")
+
+        async def read_file(self, path, **kwargs):
+            reads.append(path)
+            raise AssertionError("small changed files should not call read_file")
+
+    monkeypatch.setattr(traces, "sandbox", lambda _service: FakeSandbox())
+    records = asyncio.run(traces.snapshot("A"))
+    assert exec_kinds == ["shc-find", "shc-batch"] and reads == []
+    assert [base64.b64decode(r["path_b64"]) for r in records] == paths
+    assert [r["sha256"] for r in records] == [hashlib.sha256(body).hexdigest() for body in bodies]
+    assert records[0]["binary"] and "evidence B" in records[0]["strings"]
+    assert records[1]["content"] == "public evidence A"
+
+
+@pytest.mark.parametrize("bad_output", ["", "wrong\tYQ==\n", "PLACEHOLDER\t!!!\n"])
+def test_snapshot_rejects_partial_or_malformed_batch_output(monkeypatch, bad_output):
+    import asyncio
+    import base64
+    from types import SimpleNamespace
+
+    paths = [b"/srv/scratch/a", b"/srv/scratch/b"]
+
+    class FakeSandbox:
+        async def exec(self, argv, **_kwargs):
+            if argv[5] == "shc-find":
+                raw = b"".join(f"1001\t1\t1.0\t2.0\t{55 + i}\t644\tf\t".encode() + path + b"\0\0"
+                               for i, path in enumerate(paths))
+                return SimpleNamespace(stdout=base64.b64encode(raw).decode(), returncode=0, stderr="")
+            output = bad_output.replace("PLACEHOLDER", base64.b64encode(paths[0]).decode())
+            return SimpleNamespace(stdout=output, returncode=0, stderr="")
+
+        async def read_file(self, _path, **_kwargs):
+            raise AssertionError("malformed batch must fail closed without per-file interpretation")
+
+    monkeypatch.setattr(traces, "sandbox", lambda _service: FakeSandbox())
+    with pytest.raises(RuntimeError, match="snapshot batch|malformed snapshot batch"):
+        asyncio.run(traces.snapshot("A"))
+
+
+def test_snapshot_batch_marks_changed_metadata_unknown(monkeypatch):
+    import asyncio
+    import base64
+    from types import SimpleNamespace
+
+    paths = [b"/srv/scratch/a", b"/srv/scratch/b"]
+    before = [f"1001\t1\t1.0\t2.0\t{55 + i}\t644\tf\t".encode() + path + b"\0\0"
+              for i, path in enumerate(paths)]
+
+    class FakeSandbox:
+        async def exec(self, argv, **_kwargs):
+            if argv[5] == "shc-find":
+                return SimpleNamespace(stdout=base64.b64encode(b"".join(before)).decode(),
+                                       returncode=0, stderr="")
+            assert argv[5] == "shc-batch"
+            lines = []
+            for i, path in enumerate(paths):
+                encoded = base64.b64encode(path).decode()
+                pre = base64.b64encode(before[i]).decode()
+                # The second file is replaced with the same bytes and size after the listing.
+                post_raw = before[i] if i == 0 else before[i].replace(b"\t2.0\t", b"\t3.0\t")
+                post = base64.b64encode(post_raw).decode()
+                lines.append(f"{encoded}\t{pre}\tYQ==\t{post}")
+            return SimpleNamespace(stdout="\n".join(lines) + "\n", returncode=0, stderr="")
+
+        async def read_file(self, _path, **_kwargs):
+            raise AssertionError("batch should cover both small files")
+
+    monkeypatch.setattr(traces, "sandbox", lambda _service: FakeSandbox())
+    records = asyncio.run(traces.snapshot("A"))
+    assert records[0]["content"] == "a" and records[0]["error"] is None
+    assert records[1]["content"] is None and records[1]["sha256"] is None
+    assert "changed during" in records[1]["error"]
+
+
+def test_snapshot_batch_falls_back_for_large_file(monkeypatch):
+    import asyncio
+    import base64
+    from types import SimpleNamespace
+
+    paths = [b"/srv/scratch/a", b"/srv/scratch/b", b"/srv/scratch/large"]
+    bodies = [b"a", b"b", b"x" * (traces.READ_LIMIT + 1)]
+    metas = [f"1001\t{len(body)}\t1.0\t2.0\t{55 + i}\t644\tf\t".encode() + path + b"\0\0"
+             for i, (path, body) in enumerate(zip(paths, bodies))]
+    reads = []
+
+    class FakeSandbox:
+        async def exec(self, argv, **_kwargs):
+            if argv[5] == "shc-find":
+                return SimpleNamespace(stdout=base64.b64encode(b"".join(metas)).decode(),
+                                       returncode=0, stderr="")
+            assert argv[5] == "shc-batch" and argv[7:] == [base64.b64encode(p).decode() for p in paths[:2]]
+            lines = []
+            for path, body, meta in zip(paths[:2], bodies[:2], metas[:2]):
+                p, m = base64.b64encode(path).decode(), base64.b64encode(meta).decode()
+                lines.append(f"{p}\t{m}\t{base64.b64encode(body).decode()}\t{m}")
+            return SimpleNamespace(stdout="\n".join(lines) + "\n", returncode=0, stderr="")
+
+        async def read_file(self, path, **_kwargs):
+            reads.append(path)
+            return bodies[2]
+
+    monkeypatch.setattr(traces, "sandbox", lambda _service: FakeSandbox())
+    records = asyncio.run(traces.snapshot("A"))
+    assert reads == [paths[2].decode()]
+    assert [r["sha256"] for r in records] == [hashlib.sha256(b).hexdigest() for b in bodies]
+    assert records[2]["truncated"] and len(records[2]["content"]) == traces.READ_LIMIT
+
+
 def test_snapshot_delta_and_turn_events_retain_metadata_only_writes():
     from harness.game import scratch_turn_events, snapshot_delta
 

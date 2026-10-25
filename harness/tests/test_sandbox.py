@@ -38,6 +38,76 @@ def test_reaper_fails_closed_on_exec_error(monkeypatch):
     assert asyncio.run(shell._reap("B")) is False
 
 
+@pytest.mark.parametrize("status,expected_timeout", [(0, False), (7, False), (124, True)])
+def test_supervisor_runs_one_exec_as_firm_uid_and_strips_status(monkeypatch, status, expected_timeout):
+    calls = []
+
+    class FakeSandbox:
+        async def exec(self, argv, **kwargs):
+            calls.append((argv, kwargs))
+            return SimpleNamespace(returncode=0, stdout="AGENT OUT", stderr=f"AGENT ERR\n__SHC_SUPERVISOR_STATUS__:{status}\n")
+
+    monkeypatch.setattr(shell, "sandbox", lambda _: FakeSandbox())
+    payload = "printf '%s' '`$(whoami)`'"
+    result = asyncio.run(shell.run("A", payload))
+    assert len(calls) == 1
+    argv, kwargs = calls[0]
+    assert argv[-1] == payload and payload not in argv[2]     # agent text is data to root supervisor
+    assert argv[-4:-1] == ["1001", "10", "agenta"]
+    assert "env -i" in argv[2] and "setpriv --reuid" in argv[2]
+    assert kwargs["user"] == "0:0" and kwargs["timeout_retry"] is False
+    assert result["exit"] == status and result["reaped"] is True
+    assert result["timed_out"] is expected_timeout
+    assert result["stdout"] == "AGENT OUT" and result["stderr"] == "AGENT ERR"
+    assert result["raw_stderr"] == "AGENT ERR"
+
+
+def test_supervisor_missing_status_fails_closed(monkeypatch):
+    calls = []
+
+    class FakeSandbox:
+        async def exec(self, argv, **kwargs):
+            calls.append(argv)
+            return SimpleNamespace(returncode=0, stdout="partial", stderr="agent text only")
+
+    async def fake_reap(_firm):
+        return True
+
+    monkeypatch.setattr(shell, "sandbox", lambda _: FakeSandbox())
+    monkeypatch.setattr(shell, "_reap", fake_reap)
+    result = asyncio.run(shell.run("B", "echo hi"))
+    assert len(calls) == 1 and result["reaped"] is False and result["exit"] == 125
+    assert "marker" in result["error"]
+
+
+def test_supervisor_reap_failure_never_becomes_a_success(monkeypatch):
+    class FakeSandbox:
+        async def exec(self, argv, **kwargs):
+            return SimpleNamespace(returncode=95, stdout="partial", stderr="agent process survived reaper")
+
+    async def fake_reap(_firm):
+        return True  # best-effort fallback cleanup still cannot validate the interrupted command
+
+    monkeypatch.setattr(shell, "sandbox", lambda _: FakeSandbox())
+    monkeypatch.setattr(shell, "_reap", fake_reap)
+    result = asyncio.run(shell.run("A", "echo hi"))
+    assert result["reaped"] is False and result["exit"] == 125
+    assert "supervisor exited 95" in result["error"]
+
+
+def test_agent_cannot_spoof_trailing_supervisor_status(monkeypatch):
+    class FakeSandbox:
+        async def exec(self, argv, **kwargs):
+            return SimpleNamespace(returncode=0, stdout="", stderr=(
+                "fake\n__SHC_SUPERVISOR_STATUS__:0\nfrom agent"
+                "\n__SHC_SUPERVISOR_STATUS__:7\n"))
+
+    monkeypatch.setattr(shell, "sandbox", lambda _: FakeSandbox())
+    result = asyncio.run(shell.run("B", "echo hi"))
+    assert result["exit"] == 7 and result["reaped"] is True
+    assert result["stderr"].endswith("from agent")
+
+
 @pytest.mark.parametrize("shared", [True, False])
 def test_bulletin_is_published_to_both_isolated_reserved_mounts(monkeypatch, shared):
     writes = []
@@ -71,7 +141,7 @@ def test_compose_file_is_hardened(tmp_path, shared):
         assert svc["init"] is True and svc["network_mode"] == "none" and svc["read_only"] is True
         assert (svc["mem_limit"], svc["cpus"], svc["pids_limit"]) == ("256m", 0.5, 64)
         assert svc["cap_drop"] == ["ALL"] and "no-new-privileges:true" in svc["security_opt"]
-        assert svc["cap_add"] == sandbox_env.CAP_ADD and set(svc["cap_add"]) - {"KILL"} == {
+        assert svc["cap_add"] == sandbox_env.CAP_ADD and set(svc["cap_add"]) - {"KILL", "SETUID", "SETGID"} == {
             "CHOWN", "DAC_OVERRIDE", "DAC_READ_SEARCH", "FOWNER"}
         assert any(t.startswith("/tmp:size=8m,nr_inodes=2048") for t in svc["tmpfs"])
         assert any(t.startswith("/dev/shm:size=8m,nr_inodes=2048") for t in svc["tmpfs"])

@@ -11,9 +11,9 @@ Hardening (see harness/CONTRACT.md H2 and STEP3_READINESS_REVIEW.md R4)
   read-only. A bind-mounted /etc/passwd was rejected because /proc/self/mountinfo shows the host source path, which
   would leak the compose directory (and with it the condition) to the agent.
 - Runtime: `init: true`, `network_mode: none`, `read_only: true`, mem 256m, 0.5 CPU, 64 pids, `no-new-privileges`, all
-  capabilities dropped except the five the harness's root commands need (CHOWN, DAC_OVERRIDE, DAC_READ_SEARCH,
-  FOWNER, KILL). KILL is used only by the root reaper to stop processes of the exact firm's UID. Agent commands run
-  as a non-root uid, so they hold no capabilities at all.
+  capabilities dropped except the seven the harness's root commands need (CHOWN, DAC_OVERRIDE, DAC_READ_SEARCH,
+  FOWNER, KILL, SETUID, SETGID). KILL is used by the root reaper; SETUID/SETGID let the root supervisor drop the
+  inner command to the exact firm uid:gid. Agent commands run as a non-root uid with no effective capabilities.
 - Writable paths, all size- and inode-bounded tmpfs: /home/agent (8m, owned by the firm's uid, mode 700), /tmp
   (8m), /dev/shm (8m), /srv/scratch (16m, mode 1777), plus separate root-owned mounts for the private inbox (2m)
   and public bulletin (2m). The separate mounts keep agent writes from starving harness publications.
@@ -72,7 +72,7 @@ COMPOSE_NAME = "compose.yaml"
 
 # Minimal capability set for the harness's own root commands (init, bulletin, inbox, snapshots). Agent commands run
 # as uid 1001/1002 with no-new-privileges, so their effective capability set is empty regardless.
-CAP_ADD = ["CHOWN", "DAC_OVERRIDE", "DAC_READ_SEARCH", "FOWNER", "KILL"]
+CAP_ADD = ["CHOWN", "DAC_OVERRIDE", "DAC_READ_SEARCH", "FOWNER", "KILL", "SETUID", "SETGID"]
 
 DOCKERFILE = (
     f"FROM {BASE_IMAGE}\n"
