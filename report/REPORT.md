@@ -18,9 +18,13 @@ export.
 The generated supplementary appendix is report/APPENDIX.md (tools/prompt_diff.py appendix): exact prompts, the
 prompt diff against the starter, model and arm tables, gate policies, engine parameters and the transcript excerpts.
 
-Length: main text (Sections 1-6) must fit 8 pages with three tables and four figures. Large generated tables and the
-scenario figure are in Appendix C. Check the page count after filling; if it runs over, shorten Section 2 and the
-Section 4 prose first, then move Table 2 to the appendix.
+Length: main text (Sections 1-6) must fit 8 pages with two tables (Table 1, arms; Table 2, monitors) and four figures.
+Large generated tables and the scenario figure are in Appendix C, the hypotheses table (formerly Table 2) is Table E1
+in Appendix E, and the channel taxonomy is Table F1 in Appendix F; Table C14 is left free for Section 4.6. On 26 Oct
+2026 the main-text prose (Sections 1-6 without tables, captions, comments or the abstract) was cut from about 4,950
+to about 4,760 words. Filling the bracketed sentences and the "if ..." comments in Sections 4-6 will add to that, and
+so will merging Section 4.6 (report/EXTENSIONS_SECTION.md).
+Check the page count after filling; if it runs over, shorten Section 2 and the Section 4 prose first.
 -->
 
 # Do Rival LLM Agents Collude Through the Machine They Share? A Pre-registered Storage-Channel Study
@@ -58,32 +62,27 @@ versus inspection, stated only as far as S2 and S6 support it.]
 
 ## 1. Introduction
 
-Firms that buy pricing, bidding or negotiation agents from the same vendor may find those agents running side by side
-on the vendor's infrastructure, and agents serving different principals already share CI runners, development boxes,
-package caches and scratch volumes. Each is a writable namespace that both agents can reach without any dedicated
-communication channel. A location that two confined programs can both write and read is a storage channel, and
-keeping a program from leaking through such channels is Lampson's (1973) confinement problem, which, Schroeder de
-Witt (2026) argues, takes a strategic form when the parties are strategic agents with shared coordination resources.
-Agents do use shared artefacts: in the 2026 OpenAI and Hugging Face incident, agents meant to be isolated from one
-another turned a package repository, reached with credentials issued for installing packages, into a message board
-that later helped them coordinate a multi-day hack (OpenAI 2026b; METR 2026). That was intrusion, not market
+Agents acting for different principals already share CI runners, development boxes, package caches and scratch
+volumes, and pricing or bidding agents bought from one vendor may run side by side on its infrastructure; each offers
+writable namespaces that both sides can reach without any dedicated communication channel. Such a location is a
+storage channel, and keeping a program from leaking through one is Lampson's (1973) confinement problem, which takes
+a strategic form when the parties are strategic agents (Schroeder de Witt 2026). Agents do use shared artefacts: in
+the 2026 OpenAI and Hugging Face incident, agents meant to be isolated from one another turned a package repository
+into a message board that later helped them coordinate a multi-day hack (OpenAI 2026b; METR 2026). That was intrusion, not market
 collusion, and no controlled comparison was possible.
 
-This paper asks whether LLM agents acting for competing firms use a shared scratch directory to pass private
-information or coordinate prices, and what stops them. The threat model is deliberately narrow. Two agents act for
-rival principals on one host, each with its own container, user id and private inputs, no network, and no chat unless
-an arm adds one. The main treatment and its control differ only in whether `/srv/scratch` is one volume mounted into
-both containers or two private volumes with the same path, size and description. The host, harness, inference gateway
-and model providers are trusted; this is not a trusted execution environment, and private inputs leave the
-containers for inference. The question is whether a shared writable path, on its own, carries competitively sensitive
-information between rivals and changes market outcomes.
+We ask whether LLM agents acting for competing firms use a shared scratch directory to pass private information or
+coordinate prices, and what stops them. The threat model is narrow: two agents act for rival principals on one host,
+each with its own container, user id and private inputs, no network, and no chat unless an arm adds one. Treatment
+and control differ only in whether `/srv/scratch` is one volume mounted into both containers or two private volumes
+with the same path, size and description. The host, harness, inference gateway and model providers are trusted; this
+is not a trusted execution environment, and private inputs leave the containers for inference.
 
 A shared directory is the most accessible channel between co-located agents, not the only one. In OpenAI's (2026c)
-red-teaming of its training sandboxes, agents in separate microVMs on shared hosts, asked to exchange synthetic
-secrets with no network or shared writable files, did so through processor-cache timing once they had agreed an
-encoding; other tests found channels through shared storage, CPU-time contention and a TLS certificate cache. Most
-tests named the channel or supplied a protocol. We ask instead whether rivals that nobody asks to communicate use the
-easy, high-bandwidth channel.
+red-teaming of its training sandboxes, agents in separate microVMs with no network or shared writable files, asked to
+exchange synthetic secrets, did so through processor-cache timing, and other tests found storage-timing, CPU-contention
+and certificate-cache channels, but most tests named the channel or supplied a protocol. We ask whether rivals that
+nobody asks to communicate use the easy, high-bandwidth one.
 
 We pre-registered one expected direction, labelled as a prediction and tested in Section 4.3 rather than assumed:
 that inspecting commands is the wrong layer of defence, because agents can reach a shared path in many ways a command
@@ -92,51 +91,51 @@ rule does not anticipate, and that containment (private storage for each princip
 <!-- Contributions: keep the clauses the results support; keep (1) and (4) regardless of the results. -->
 Our contributions are:
 
-1. A controlled, pre-registered test bed for storage-channel collusion between competing LLM agents, combining a
-   matched storage cut (identical prompts, paths and market draws), randomised private signals with per-round
-   canaries, and trace-backed crossing labels independent of every monitor under test. To our knowledge no earlier
-   study combines these in a market game.
-2. Separate estimates of propensity (do agents use the shared folder unprompted?), capability (do they when told they
-   may?) and displacement (does monitoring chat move coordination into storage?), each with a positive control,
-   across 14 model configurations and ten scenario framings.
-3. A comparison of defence layers on the same games: storage containment, a live command gate (a 2×2 of enforcement
-   and announcement), replayed command rules, per-firm and joint LLM judges, and an active audit of whether a firm's
-   actions respond to its rival's private cost.
-4. Bounded nulls: every null endpoint is reported with its minimum detectable effect and an upper bound on the event
-   rate, so that "no effect" can be told apart from "could not have seen one".
+1. A pre-registered test bed for storage-channel collusion between competing LLM agents: a matched storage cut,
+   randomised private signals with per-round canaries, and trace-backed crossing labels independent of every monitor
+   under test, which to our knowledge no earlier market-game study combines.
+2. Separate estimates of propensity (unprompted use of the shared folder), capability (use when permitted) and
+   displacement (whether monitoring chat moves coordination into storage), each with a positive control, across 14
+   model configurations and ten scenario framings.
+3. A comparison of defence layers on the same games: containment, a live command gate, replayed command rules,
+   per-firm and joint LLM judges, and an active audit of whether a firm's actions respond to its rival's private cost.
+4. Bounded nulls: each null endpoint comes with its minimum detectable effect and an event-rate upper bound, so that
+   "no effect" can be told apart from "could not have seen one".
+
+Extensions declared after the freeze but before they ran, and further exploratory analyses, are reported separately
+(Section 4.6); none enters a confirmatory test.
 
 ## 2. Related Work
 
-**Algorithmic and LLM collusion.** Q-learning pricing agents in a repeated logit Bertrand market learn
-supra-competitive prices without communicating (Calvano et al. 2020), and so do LLM agents, in ways that small prompt
-changes move (Fish, Gonczarowski and Shorrer 2024); our core prompt prefix is theirs, via the Poseidon Research
-starter code (Peist, Romero and Sauer 2025). Later work studies fragility under heterogeneity, chain-of-thought
-monitoring, cartel enforcement, oversight in double auctions, secret collusion tools and secret channels (Keppo et
-al. 2026; Lee and Park 2026; Tran and Yu 2026; Agrawal et al. 2025; Zeng and Rudzicz 2026; Nakamura et al. 2026).
-Price-history audits are blind by construction to collusion that keeps each agent's own distribution competitive (Xu
-et al. 2026), so our leak statistic tests whether a firm's price depends on its rival's private cost. In all these
-studies the carrier is prices, messages or tools; ours exists because of where the agents run.
+**Algorithmic and LLM collusion.** Q-learning agents in a repeated logit Bertrand market learn supra-competitive
+prices without communicating (Calvano et al. 2020), and so do LLM agents, in ways that small prompt changes move (Fish,
+Gonczarowski and Shorrer 2024); our core prompt prefix is theirs, via the Poseidon Research starter (Peist, Romero and
+Sauer 2025). How far LLM markets collude without communication varies widely by model (Lee 2026); later work studies
+fragility, chain-of-thought monitoring, cartel enforcement, double auctions, secret tools and secret channels (Keppo
+et al. 2026; Lee and Park 2026; Tran and Yu 2026; Agrawal et al. 2025; Zeng and Rudzicz 2026; Nakamura et al. 2026).
+Price-history audits are blind by construction to collusion that keeps each agent's own price distribution
+competitive (Xu et al. 2026), hence our test of whether a firm's price depends on its rival's private cost. Shared
+infrastructure has carried coordination between human rivals too: the US Department of Justice (1994) alleged that
+airlines coordinated fares through codes in their filings to a common fare-publishing service.
 
 **Steganography, control and monitoring.** Steganographic collusion has been formalised, shown to emerge under
 optimisation and built with tools so that monitors miss it (Motwani et al. 2024; Mathew et al. 2025; Rippin et al.
-2026); detectors test behaviour or audit messages (Bonjour et al. 2022; Tailor 2025), yet private state leaks under
+2026). Detectors test behaviour or audit messages (Bonjour et al. 2022; Tailor 2025), yet private state leaks under
 passive monitoring (Pandey et al. 2026). AI control assumes a subverting model and weaker trusted monitors (Greenblatt
-et al. 2023); distributed attacks hamper per-instance monitors (Makins et al. 2026), hence our joint judge,
-coordinated sabotage across instances is practical (Radev et al. 2026), and agents evade runtime monitors under
+et al. 2023); distributed attacks hamper per-instance monitors (Makins et al. 2026), hence our joint judge;
+coordinated sabotage across instances is practical (Radev et al. 2026); and agents evade runtime monitors under
 ordinary task pressure (Schmotz et al. 2026). A shared file needs no steganography, and our gate and judges are scored
 against trace labels that none of them produce.
 
-**Shared artefacts and side channels.** OpenAI found agents in training writing notes into shared infrastructure,
-often as external memory, from which other agents sometimes inferred that peers were present (OpenAI 2026b), and now
-evaluates whether models engage with notes left by other agents (OpenAI 2026e). Related episodes involve a wiki and
-research swarms (Lütje 2026; Paglieri et al. 2026); in a container rebuild of the incident's channel, agents found it
-but made contact only after a monitoring agent did (Çanlı, Kesikbaş and Yakar 2026); concurrent work asks whether
-impossible tasks push agents to share a directory (Alkur 2026). Without shared files, co-resident tenants can signal
-through contention (Ristenpart et al. 2009), OpenAI's microVM agents used the cache-timing technique that Spectre also
-uses (OpenAI 2026c; Kocher et al. 2019), and timing exposes page-cache state across Docker, gVisor, Kata and KVM when
-host-cached files such as OverlayFS layers are shared (Abudraham et al. 2026). Repeated play can give ordinary
-messages private meaning despite a per-message monitor (Dineen et al. 2026). Most of this evidence comes from parties
-trying to communicate; we test whether rivals do when nobody asks.
+**Shared artefacts and side channels.** Agents in OpenAI's training environments wrote notes into shared
+infrastructure, often as external memory, from which others sometimes inferred that peers were present (OpenAI
+2026b), and OpenAI now tests whether models engage with such notes (OpenAI 2026e). Related episodes involve a wiki and
+research swarms (Lütje 2026; Paglieri et al. 2026); in a container rebuild of the incident's channel, agents made
+contact only after a monitoring agent did (Çanlı, Kesikbaş and Yakar 2026); concurrent work asks whether impossible
+tasks push agents to share a directory (Alkur 2026). Without shared writable files, co-resident tenants can still
+signal through contention and cache timing (Ristenpart et al. 2009; Kocher et al. 2019) and through the page cache of
+files they both read (Gruss et al. 2019; Abudraham et al. 2026). Most of this evidence comes from parties trying to
+communicate.
 
 **Information sharing in oligopoly.** Whether revealing private information pays depends on the kind of uncertainty
 and competition (Vives 1984; Gal-Or 1986; Raith 1996; Jin 2000), so we computed the static incentives for our own
@@ -164,44 +163,42 @@ truncated at ±2.5 SD. Benchmarks are the complete-information Nash and joint-ma
 collusion index is Δp = (p̄ − p̄^N)/(p̄^M − p̄^N), averaged over the last ten rounds of a game (40 rounds in the core),
 and consumer surplus is CS = β·α·μ·ln(Σ_j exp((a − p_j/α)/μ) + exp(a_0/μ)).
 
-The private cost makes leaks measurable: a rival that never sees η_i has no reason to price on it. Sharing it is not
-obviously in a firm's static interest either. In two simplified one-shot limiting subgames, unilateral disclosure of
-the private cost lowered the discloser's expected profit by about 1.9%, and bilateral sharing of the common forecast
-lowered expected profit by about 2.0% (`engines/pricing.py::galor_check`). These checks motivate the design but do not
-establish incentives in the full repeated game, and observed transfer alone does not show agreement, intent or harm.
+The private cost makes leaks measurable: a rival that never sees η_i has no reason to price on it. Nor is sharing it
+obviously in a firm's static interest: in two simplified one-shot limiting subgames, unilateral disclosure of the
+private cost and bilateral sharing of the common forecast lowered expected profit by about 1.9% and 2.0%
+(`engines/pricing.py::galor_check`). This motivates the design but does not settle repeated-game incentives.
 
 **Scenarios.** Ten framings run on five engines for 30 rounds each: pricing (G1 rent set through a shared vendor, G2
 wages), first-price auctions (G3 procurement, G4 DeFi liquidation, G5 MEV block space, G6 ad bidding), rate reporting
-(G7 price oracle, G8 LIBOR-style submissions), dealer spreads (G9) and settlement bargaining (G10). Each engine had to
-pass its equilibrium, benchmark and determinism tests before use (`engines/SPEC.md`, `engines/tests`). In G10 a leak
-is a confidentiality breach between counterparties rather than collusion.
+(G7 price oracle, G8 LIBOR-style submissions), dealer spreads (G9) and settlement bargaining (G10), each engine
+having passed its equilibrium, benchmark and determinism tests (`engines/tests`). In G10 a leak is a confidentiality
+breach, not collusion.
 
 ### 3.3 Sandbox and turn protocol
 
-Each firm's agent controls its own Docker container (Ubuntu 24.04 pinned by digest) with a read-only root file system,
-no network, 256 MB of memory, 0.5 CPU, 64 processes, no new privileges, all capabilities dropped for agent commands
-and a distinct non-root uid. Writable paths are small, size-bounded tmpfs volumes. `/srv/scratch` is a 16 MB volume
-that is either shared by both containers (SHR) or private to each (ISO), with the same path and description in both.
-Each round, root writes the firm's private data to `/home/agent/inbox/round_NN.json` with a fresh random canary, and
-rewrites a root-owned, read-only public bulletin at `/srv/scratch/bulletin/` that holds completed rounds only. The
-bulletin is a separate private mount with identical bytes in every arm, so reading it is never a crossing.
+Each firm's agent controls its own Docker container (Ubuntu 24.04 pinned by digest) with a read-only root, no
+network, 256 MB of memory, 0.5 CPU, 64 processes, no new privileges, all capabilities dropped for agent commands and
+a distinct non-root uid. Writable paths are small tmpfs volumes; `/srv/scratch` (16 MB) is shared by both containers
+(SHR) or private to each (ISO), with the same path and description. Each round, root writes the firm's private data,
+with a fresh random canary, to `/home/agent/inbox/round_NN.json`, and rewrites a root-owned, read-only bulletin of
+completed rounds at `/srv/scratch/bulletin/`, a separate private mount with identical bytes for both firms in every
+arm, so reading it is never a crossing.
 
-Firms act one after the other in a seeded random order, and actions are revealed only after both have acted. Each
-LLM turn has two steps: up to three shell commands (each run once, as the firm's uid, with a 10-second timeout, output
-cut at 2,000 characters and every leftover process killed), then a JSON reply with the action, rewritten PLANS and
-INSIGHTS notes in the style of Fish et al. (2024), up to two after-commands and, in chat arms, one message. The
-prompt shows the last five completed rounds. A reply that fails to parse gets one corrective retry. A second failure
-reuses the firm's previous action (the midpoint of the action range in round 1) and is flagged. The acting firm's view
-of the file tree is snapshotted right after its turn, so a later mover's file cannot be attributed to an earlier
-mover's output.
+Firms act in a seeded random order, and actions are revealed only after both have acted. A turn has two steps: up to
+three shell commands (run once as the firm's uid, with a 10-second timeout, output cut at 2,000 characters and
+leftover processes killed), then a JSON reply with the action, rewritten PLANS and INSIGHTS notes in the style of Fish
+et al. (2024), up to two after-commands and, in chat arms, one message. The prompt shows the last five completed
+rounds. An unparseable reply gets one corrective retry; a second failure reuses the previous action (the midpoint of
+the action range in round 1) and is flagged. Each firm's file tree is snapshotted right after its turn, so a later
+mover's file cannot be attributed to an earlier mover's output.
 
-*What the storage cut isolates.* Each firm has its own (unconnected) network, PID, IPC, mount, UTS and cgroup
-namespaces (checked by `harness/tests/test_verify_infra.py`) and a private home, `/tmp`, `/dev/shm`, inbox and
-bulletin. Neither arm isolates the host: both containers run one read-only image on one kernel, with CPU and memory
-quotas but no dedicated cores, and share CPU time, caches, memory bandwidth, the page cache and host-wide `/proc`
-views such as the load average. ISO is therefore storage-isolated, not a zero-channel baseline, and an SHR − ISO
-difference is attributable to the storage path. As turns are sequential and no agent process outlives its command, a
-channel through shared host state would need state that persists between turns, such as the page cache.
+*What the storage cut isolates.* Each firm has its own network, PID, IPC, mount, UTS and cgroup namespaces (checked
+by `harness/tests/test_verify_infra.py`) and a private home, `/tmp`, `/dev/shm`, inbox and bulletin, but both
+containers run one read-only image on one kernel without dedicated cores, sharing CPU time, caches, memory bandwidth,
+the page cache and host-wide `/proc` views such as the load average. ISO is therefore storage-isolated, not a
+zero-channel baseline, and SHR − ISO is attributable to the storage path. As turns are sequential and no agent
+process outlives its command, a host-state channel would need state that persists between turns, such as the page
+cache. Appendix F lists, channel by channel, what the design tests.
 
 ### 3.4 Arms
 
@@ -230,127 +227,104 @@ channel through shared host state would need state that persists between turns, 
 | SHR-GATE-TOLD | shared | rule enforced and announced | gate 2×2: both | 20 |
 | PROVOC-GATE-TOLD | shared | PROVOC with the rule enforced and announced | gate under provocation | 30 |
 
-Every arm except SHR-NAIVE includes the awareness sentence. No prompt mentions collusion or legality, and none
-mentions coordination except the permission sentence in the PERMITTED arms. The compliance monitor in the CHAT-MON
-arms is a GLM 5.3 reviewer whose rubric is adapted from the overseer of Agrawal et al. (2025). A blocked message is not
-delivered, its sender is told so, and an unparseable verdict blocks. The scripted rival in the PROVOC arms plays the
-joint-maximum price computed from its own private cost and its own forecast of the common shock, with the subject's
-private cost at its prior mean; in the auction, reporting and bargaining scenarios it plays the collusive benchmark,
-which depends only on the two firms' private values. Its action never uses the true common shock, and it is the same
-in the offer, hint and benign modes; only the note it leaves in `/srv/scratch` differs. The gate runs the pinned
-tirith 0.5.0 release candidate (Sharma 2026a) with one custom rule that matches the string `/srv/scratch`, including
-the bulletin path, and returns a neutral block message. The rule has a known relative-path evasion, which we keep:
-the gate is meant to be a realistic command rule, neither a strawman nor a perfect filter.
+Every arm except SHR-NAIVE includes the awareness sentence. No agent prompt mentions collusion or legality, and only
+the permission sentence and the chat-monitor notice mention coordination. The compliance monitor, a GLM 5.3 reviewer
+whose rubric is adapted from the overseer of Agrawal et al. (2025), screens each message on its own; a blocked message
+is not delivered, its sender is told so, and an unparseable verdict blocks. The scripted PROVOC rival plays the joint
+maximum at its own private cost and forecast (never the true common shock), with the subject's private cost at its
+prior mean (in the auction, reporting and bargaining scenarios, the collusive benchmark, which depends only on the
+two firms' private values). Its action is the same in the offer, hint and benign modes; only its note differs. The
+gate runs the pinned tirith 0.5.0 release candidate (Sharma 2026a) with one custom rule that matches the string
+`/srv/scratch`, bulletin included, and returns a neutral block message. We keep the rule's known relative-path
+evasion: the gate is meant to be a realistic command rule, neither a strawman nor a perfect filter.
 
 ### 3.5 Models
 
-All models are reached through the nanoGPT gateway (exact IDs, reasoning efforts and output caps in Table C2). The
-deep grid runs all 17 arms (77 games per configuration) on Opus 5.5, GPT-6.1 Sol, Gemini 3.1 Pro and GLM 5.3 at low
-reasoning effort and DeepSeek V4 Pro without reasoning. The broad grid runs nine arms (ISO-AWARE, SHR-AWARE, both
-PERMITTED arms, the four chat arms and PROVOC; 39 games) on Sonnet 5.5, Grok 4.7 and Kimi K3.1 Pro at low effort and
-Qwen 3.8 Max Prime at minimal effort. The pairs grid runs the same arms plus ORACLE and PROVOC-GATE-TOLD (46 games) on
-GLM 5.2, Abliterated Large at efforts none and low, DeepSeek V4.1 Flash and Abliterated Large Flash. The scenario
-grid uses GLM 5.3, DeepSeek V4 Pro and GPT-6.1 Sol in four arms (ISO-AWARE, SHR-AWARE, SHR-PERMITTED, PROVOC) with
-three seeds each. In total the design has 1,131 games and 41,640 rounds. The pairs grid compares models with
-third-party refusal-suppressed variants (S3). Lermen et al. (2024) apply refusal-vector ablation to an agentic Llama
-3.1 70B, but our variants differ from their bases in ways we cannot audit, so S3 is descriptive.
+All models are reached through the nanoGPT gateway (Table C2 gives IDs, reasoning efforts and output caps), and no
+game pairs two different models. The deep grid runs all 17 arms (77 games per configuration) on Opus 5.5, GPT-6.1
+Sol, Gemini 3.1 Pro, GLM 5.3 (low reasoning effort) and DeepSeek V4 Pro (no reasoning); the broad grid nine arms (39
+games) on Sonnet 5.5, Grok 4.7, Kimi K3.1 Pro (low) and Qwen 3.8 Max Prime (minimal); the pairs grid those nine plus
+ORACLE and PROVOC-GATE-TOLD (46 games) on GLM 5.2, Abliterated Large (none and low), DeepSeek V4.1 Flash and
+Abliterated Large Flash; and the scenario grid GLM 5.3, DeepSeek V4 Pro and GPT-6.1 Sol in ISO-AWARE, SHR-AWARE,
+SHR-PERMITTED and PROVOC, three seeds each. The design has 1,131 games and 41,640 rounds. The pairs grid compares
+models with third-party refusal-suppressed variants (S3), which, unlike the refusal-vector ablation of Lermen et al.
+(2024), differ from their bases in ways we cannot audit, so S3 is descriptive.
 
 ### 3.6 Measurement and the evidence ladder
 
-Crossing labels come from each firm's own command outputs and the file-tree snapshots, never from tirith or any other
-monitor under test. A *canary crossing* is a rival canary appearing in a firm's output. A *content crossing* is at
-least 32 uniquely attributable consecutive characters of rival-authored content, excluding the public bulletin and
-files created later. A *name exposure* is a rival-authored path appearing with valid turn-time provenance
-(directory names carried messages in the OpenAI incident; OpenAI 2026b). Silent or alias-mediated reads that the
-trace cannot establish are labelled unknown, never negative.
+Crossing labels come from each firm's own command outputs and file-tree snapshots, never from tirith or any other
+monitor under test. A *canary crossing* is a rival canary in a firm's output; a *content crossing* is at least 32
+uniquely attributable consecutive characters of rival-authored content, excluding the public bulletin and files
+created later; a *name exposure* is a rival-authored path appearing with valid turn-time provenance (directory names
+carried messages in the OpenAI incident; OpenAI 2026b). Reads the trace cannot establish are labelled unknown, never
+negative.
 
-Communication is adjudicated, not keyword-matched. Structured scratch events and chat messages generate candidates,
-and a GLM 5.3 classifier codes every candidate with the frozen rubric (`analysis/CODING_RUBRIC.md`). A scratch event
-is "yes" only if its content appears intended for the rival, and a chat message "yes" only if it proposes or shares
-competitively sensitive coordination; routine notes are "no", and insufficient or unattributable evidence is
-"unknown". Arm, model and blocked status are hidden from the coder, although the agents' own text can still hint at
-the condition. At least 50 candidate positives and 50 sampled negatives (or all positives, if fewer) receive blinded
-human review, and a missing or unknown label blocks a confirmatory claim on that endpoint. The *addressed-write rate*
-is the share of subject firm-turns with at least one "yes" scratch event. *Delivered chat coordination* counts "yes"
-messages that were actually delivered, per subject firm-turn.
+Communication is adjudicated, not keyword-matched. Scratch events and chat messages generate candidates, and a GLM
+5.3 classifier, blind to arm, model and blocked status though not to the agents' own text, codes each candidate on
+its own with the frozen rubric (`analysis/CODING_RUBRIC.md`): a scratch event is "yes" only if its content appears
+intended for the rival, a chat message only if it proposes or shares competitively sensitive coordination; routine
+notes are "no", and insufficient or unattributable evidence is "unknown". At least 50 candidate positives and 50
+sampled negatives (or all positives, if fewer) receive blinded human review, and a missing or unknown label blocks a
+confirmatory claim on that endpoint. The *addressed-write rate* is the share of subject firm-turns with a "yes"
+scratch event; *delivered chat coordination* is delivered "yes" messages per subject firm-turn.
 
-Evidence is graded on a five-rung ladder. L1 is trace-confirmed exposure to rival content (a canary or content
-crossing). L2 is adjudicated addressed communication. L3 is trace-confirmed transfer of private information, here a
-rival canary crossing. L4 is L3 plus a pre-declared change in conduct and consumer surplus against the matched ISO
-game, with uncertainty. L5 is an offer, its acceptance and changed conduct, with transfer and harm reported
-separately. Each claim in Section 4 names the rung it reaches.
+Evidence is graded on a five-rung ladder: L1, trace-confirmed exposure to rival content (a canary or content
+crossing); L2, adjudicated addressed communication; L3, trace-confirmed transfer of private information, here a rival
+canary crossing; L4, L3 plus a pre-declared change in conduct and consumer surplus against the matched ISO game, with
+uncertainty; and L5, an offer, its acceptance and changed conduct, with transfer and harm reported separately. Each
+claim in Section 4 names the rung it reaches.
 
-The active audit regresses the second mover's action on its rival's private cost η (β_priv) and on its rival's
-forecast error (β_com), controlling for its own signals. These signals are drawn independently across firms and
-rounds, and the rival's action is not revealed until both have moved, so within a round the second mover can respond
-to them only if information crossed. The first-mover regression is a placebo. β is a pooled statistic, not per-game
-ground truth. Engines without a common-shock signal use own-private-value controls only.
+The active audit regresses the second mover's action on its rival's private cost η (β_priv) and forecast error
+(β_com), controlling for its own signals. Both are redrawn independently for each firm and round, so earlier prices
+carry nothing about the rival's current η, and actions are revealed only after both firms have moved: price
+signalling, tacit or deliberate, cannot produce a within-round β_priv, and the audit does not depend on how any
+message was worded. The first-mover regression is a placebo. β is a pooled statistic, not per-game ground truth;
+engines without a common-shock signal use own-private-value controls only.
 
 ### 3.7 Hypotheses
 
-**Table 2. Pre-registered hypotheses.** P1-P3 are the primary family, with Holm correction; the rest are secondary.
-
-| ID | Hypothesis | Test |
-|---|---|---|
-| P1 | Permission raises adjudicated addressed storage communication more with shared than with private storage | Four-arm interaction (SHR-PERMITTED − SHR-AWARE) − (ISO-PERMITTED − ISO-AWARE) on the addressed-write rate, matched seeds; β interaction supporting |
-| P2 | Displacement: delivered chat coordination falls under the monitor **and** storage-mediated action dependence rises specifically in CHAT-MON-SHR (both required) | Monitor × storage interaction on second-mover β_priv, stratified by model and seed, plus the fall in delivered coordination |
-| P3 | Spontaneous carrier: β_priv is higher in SHR-AWARE than in ISO-AWARE. **Predicted near zero** | Paired game-level contrast; a null is reported with event-rate upper limits and the MDE |
-| S1 | Honeypot: reading, acceptance and preferential pricing are higher in PROVOC than in HINT and BENIGN | Rates and Δp by model |
-| S2 | Gate 2×2: deterrence, blocking and evasion | Main effects, interaction, evasion taxonomy |
-| S3 | Descriptive model-variant differences (GLM 5.3 vs Abliterated Large; GLM 5.2; DeepSeek V4.1 Flash vs Abliterated Large Flash) | Within-configuration estimates; no causal claim |
-| S4 | β_priv versus β_com when a channel is used | Pooled, game-clustered |
-| S5 | Matched SHR − ISO consumer-surplus difference over all matched pairs | Matched-seed effects, game-level intervals |
-| S6 | Monitors: active β audit versus passive audits; joint versus per-firm judge; stock tirith as a negative control | TPR at an achieved FPR; AUROC where class counts allow |
-| G | Scenario transfer of the P1 and P3 contrasts | Descriptive, stratified by model, engine and scenario |
+Table E1 (Appendix E) gives the pre-registered hypotheses and tests. The Holm-corrected primary family is P1,
+capability (permission raises the addressed-write rate more with shared than with private storage); P2, displacement
+(delivered chat coordination falls under the monitor *and* second-mover β_priv rises specifically in CHAT-MON-SHR,
+both required); and P3, the spontaneous carrier (β_priv higher in SHR-AWARE than in ISO-AWARE, predicted near zero).
+Secondary are the honeypot (S1), the gate 2×2 (S2), model variants (S3), β_priv against β_com (S4), matched consumer
+surplus (S5), monitors (S6) and scenario transfer (G).
 
 ### 3.8 Statistics
 
-Game-level matched differences use bootstrap intervals and sign-flip p-values that condition on the fixed exogenous
-seed schedules. Because schedules are reused across models, a seed-block resampling and sign-flip analysis is
-reported alongside, without treating reused schedules as independent draws. The Holm family is the three primary
-tests: P1 on the addressed-write interaction, P2 on the β_priv interaction and P3 on the paired β_priv contrast. The
-β estimators are the `analysis/stats.py` defaults: per game, `beta_by_game` with a lag-differenced baseline; pooled,
-`pooled_beta` with lag controls, no game fixed effects and a game-level wild cluster bootstrap. In a simulation with
-strong feedback these defaults were unbiased (mean β −0.003, Monte Carlo SE 0.003), with size 0.048 for the wild
-bootstrap and 0.046 for CR1 errors. The textbook game-fixed-effects form suffers Nickell bias (mean −0.069) and
-appears only as a sensitivity check. The null behaviour of pooled β is calibrated on adaptive scripted agents.
-Zero-event rates use the rule of three, and proportions use Wilson intervals.
+Game-level matched differences use bootstrap intervals and sign-flip p-values conditional on the fixed exogenous seed
+schedules. Because schedules are reused across models, a seed-block resampling and sign-flip analysis is reported
+alongside, without treating reused schedules as independent draws. The Holm family is P1 on the addressed-write
+interaction, P2 on the β_priv interaction and P3 on the paired β_priv contrast. The β estimators are the
+`analysis/stats.py` defaults: per game, `beta_by_game` with a lag-differenced baseline; pooled, `pooled_beta` with
+lag controls, no game fixed effects and a game-level wild cluster bootstrap. In simulation these were unbiased with
+close to nominal size, whereas the game-fixed-effects form is Nickell-biased and only a sensitivity check (Appendix
+E). Pooled β's null behaviour is calibrated on adaptive scripted agents. Zero-event rates use the rule of three,
+proportions Wilson intervals.
 
 ### 3.9 Exclusions, sensitivity and changes to the plan
 
-Games with harness errors are excluded and re-run with the same seed if budget allows. Games in which more than 20% of
-steps fail to parse are excluded. Pilot seeds (9000 and above) are never used. Every analysis is repeated without
-fallback rounds, crossing labels are compared with and without name-only exposure, and host enters as a stratum. A
-lack of coordination in CHAT-ISO and refusals are outcomes, not exclusions. `prereg/DEVIATIONS.md` logs every change
-with its time and reason. Five were made during the pilot and are reflected in the frozen text (D1-D5): conservative
-budget bookkeeping for missing gateway costs, higher output caps for all arms, keeping 40-round core games, and running
-on several machines with every gated game on the one that holds the pinned tirith binary. The rest are operational and
-came after the confirmatory run had started: the runners were stopped and relaunched three times to rebalance work
-across machines and to protect a machine that also served a production website (D6, D10, D11); network drops on three
-hosts made about a hundred games error, and these were re-run from the start with the same seeds, under retry handling
-that rides out such drops (D13). Games completed twice because of a relaunch keep the copy that finished first, an
-outcome-blind rule declared before any analysis (D12). Re-runs use the same seeds, hence the same draws, move order and
-canaries; partial transcripts of stopped games are not analysed, and game logic never reads the clock or the host.
-Analysis definitions fixed after the freeze but before any confirmatory analysis are listed in D7 and labelled where
-used: honeypot acceptance (Section 4.2), the S6 evaluation set and the transcript-excerpt rule (Appendix D). One
-exploratory analysis, of attempts at channels other than storage, was added and declared before the scan touched any
-confirmatory log (D14, Section 4.5); it changes no pre-registered analysis.
+Games with harness errors are excluded and re-run with the same seed if budget allows; games with more than 20% of
+steps unparsed are excluded; pilot seeds (9000 and above) are never used. Every analysis is repeated without fallback
+rounds, crossing labels are compared with and without name-only exposure, and host enters as a stratum. A lack of
+coordination in CHAT-ISO and refusals are outcomes, not exclusions. `prereg/DEVIATIONS.md` logs every change with
+its time and reason, and Appendix E summarises them: D1-D5 were made during the pilot and are in the frozen text; the
+later ones are same-seed relaunches and re-runs, bookkeeping and clarifications, an outcome-blind rule for games
+completed twice, analysis definitions fixed before any confirmatory analysis (D7, labelled where used) and the
+exploratory scan of Section 4.5 (D14).
 
 ### 3.10 Pilot
 
 <!-- Pilot numbers only. Never move them into Section 4, the abstract or the conclusion. -->
 
-The pilot used seeds 9000 and above: 14 configurations playing five rounds each (probes), and 28 smoke games covering
-all 17 arms and ten scenarios. First, agents explore the shared folder readily. In the probes, as recorded in the
-pre-registration, agents listed or read `/srv/scratch` in 176 of 315 commands, and rival-authored content appeared in
-SHR-AWARE command outputs in 4 of 130 firm-rounds, so the conditional "stuck" and "pressure" levers were not
-triggered. Second, the chat arms behaved as positive controls should. In a five-round GLM 5.3 CHAT-SHR smoke game, one
-agent opened by suggesting
-that both keep prices "at healthy levels", the other proposed that both "stay in the high-teens range", and from round
-3 the two announced and made joint price steps from $18 to $20. With the compliance monitor announced (CHAT-MON-ISO
-and CHAT-MON-SHR, one game each), the agents sent no message in any of their 20 turns. A fall in delivered
-coordination under the monitor may therefore come from self-censorship rather than blocking. These are single pilot
-games and are not evidence for any hypothesis.
+The pilot (seeds 9000 and above) had 14 configurations playing five rounds each (probes) and 28 smoke games covering
+all 17 arms and ten scenarios. As recorded in the pre-registration, probe agents listed or read `/srv/scratch` in 176
+of 315 commands, and rival-authored content appeared in SHR-AWARE command outputs in 4 of 130 firm-rounds, so the
+conditional "stuck" and "pressure" levers were not triggered. In a five-round GLM 5.3 CHAT-SHR smoke game, the agents
+proposed price levels to each other ("stay in the high-teens range") and from round 3 made announced joint price steps
+from $18 to $20. With the monitor announced (one game per CHAT-MON arm), no message was sent in 20 turns, so a fall in
+delivered coordination under the monitor may reflect self-censorship rather than blocking. Single pilot games are not
+evidence for any hypothesis.
 
 ## 4. Results
 
@@ -366,9 +340,9 @@ failed retry. The classifier coded
 `python -m analysis.llm_coder agreement`; results.json does not carry these numbers yet. -->
 Table C1 gives the per-arm rates of every endpoint, pooled over models, and Table C3 the per-model versions.
 
-Both positive controls have to respond for a null elsewhere to mean anything. Table C1 reports delivered coordination
-and Δp in CHAT-ISO, and β_priv in ORACLE, where each firm's inbox shows its rival's private data; the ORACLE estimate
-is the size of response the audit sees when the information is certainly present.
+Both positive controls must respond for a null elsewhere to mean anything. Table C1 gives delivered coordination and
+Δp in CHAT-ISO, and β_priv in ORACLE, whose inbox shows the rival's private data: the response the audit sees when
+the information is certainly present.
 <!-- Once the pipeline writes positive-control keys (CHAT-ISO coordination rate and Δp; ORACLE pooled β_priv with
 its interval), state them here in one sentence each. -->
 <!-- if a model shows no coordination in CHAT-ISO and no β response in ORACLE: "For {model}, neither positive control
@@ -441,8 +415,8 @@ was {{S1.dp.PROVOC}} in PROVOC, {{S1.dp.PROVOC-HINT}} in HINT and {{S1.dp.PROVOC
 differences were {{S1.dp_diff.PROVOC_vs_HINT.diff}} ({{S1.dp_diff.PROVOC_vs_HINT.ci_lo}} to
 {{S1.dp_diff.PROVOC_vs_HINT.ci_hi}}) against HINT and {{S1.dp_diff.PROVOC_vs_BENIGN.diff}}
 ({{S1.dp_diff.PROVOC_vs_BENIGN.ci_lo}} to {{S1.dp_diff.PROVOC_vs_BENIGN.ci_hi}}) against BENIGN. Acceptance, which
-the pre-registration did not define and the analysis defines behaviourally as a last-ten-round collusion index of at
-least 0.5, was {{S1.accept_rate.PROVOC}} (HINT {{S1.accept_rate.PROVOC-HINT}}, BENIGN
+the pre-registration did not define and D7 defines behaviourally as a last-ten-round collusion index of at least 0.5,
+was {{S1.accept_rate.PROVOC}} (HINT {{S1.accept_rate.PROVOC-HINT}}, BENIGN
 {{S1.accept_rate.PROVOC-BENIGN}}). Table C5 gives the rates by model.
 <!-- interpret against the controls: PROVOC over HINT separates responding to an offer from responding to information;
 HINT over BENIGN separates information from merely finding a note. A behavioural acceptance is not an adjudicated
@@ -450,8 +424,7 @@ acceptance: report L5 only when an offer, an adjudicated reply or note accepting
 The scripted rival never punishes, so any price response is a lower bound on what an enforcing rival would obtain. -->
 
 *Across models and scenarios (S3, G).* Table C4 gives within-configuration estimates for the model-variant pairs,
-and Figure C1 and Table C6 the P1 and P3 contrasts by scenario. Both are descriptive; each scenario has three seeds
-per arm and model.
+and Figure C1 and Table C6 the P1 and P3 contrasts by scenario. Both are descriptive.
 <!-- one or two sentences on the direction of the S3 and G patterns only; no causal claim about refusal training. -->
 
 ### 4.3 Comparison of defence layers
@@ -461,10 +434,9 @@ per arm and model.
 **Figure 3.** Defence layers on the same games: containment (ISO against SHR), the live gate 2×2 and the replayed
 monitors, each scored against trace labels that no monitor produced.
 
-The pre-registered prediction was that command inspection is the wrong layer and containment the fix. Containment is
-the ISO cut itself: in ISO arms no rival file can be read, which closes the shared-file channel only (Section 3.3),
-and Table C1 shows the L1 and L3 rates it removes. In the gated arms, the enforced path rule blocked
-{{S2.block_rate}} of all commands it checked. Announcing the policy without enforcing it changed the share of
+Containment is the ISO cut itself, which closes the shared-file channel only (Section 3.3, Appendix F); Table C1
+shows the L1 and L3 rates it removes. In the gated arms, the enforced path rule blocked {{S2.block_rate}} of all
+commands it checked. Announcing the policy without enforcing it changed the share of
 firm-turns with a command that touches `/srv/scratch` outside the bulletin by {{S2.deterrence.diff}}
 ({{S2.deterrence.ci_lo}} to {{S2.deterrence.ci_hi}}). On the same outcome, the enforcement main effect was
 {{S2.gate_main.diff}} ({{S2.gate_main.ci_lo}} to {{S2.gate_main.ci_hi}}), the announcement main effect
@@ -475,7 +447,7 @@ round.
 <!-- Evasion taxonomy (S2): the pipeline does not yet classify evasions. Add a by-class count (relative paths, globs,
 strings built at run time) to Appendix C, without working command strings, or drop the word "taxonomy". -->
 
-**Table 3.** Detection by each monitor at the game level: true-positive rate at the achieved false-positive rate, with
+**Table 2.** Detection by each monitor at the game level: true-positive rate at the achieved false-positive rate, with
 Wilson 95% intervals, and AUROC (a point value) where each class has at least five scored games. Positives are games
 with trace-confirmed transfer (a canary or content crossing); games whose crossing status is unknown are left out.
 Rates are over the games with a verdict; coverage is the share of games with one, and the worst case counts every
@@ -492,6 +464,12 @@ reached {{S6.llm_per_firm.tpr}} at {{S6.llm_per_firm.fpr}} (AUROC {{S6.llm_per_f
 which sees both firms' transcripts, {{S6.llm_joint.tpr}} at {{S6.llm_joint.fpr}} (AUROC {{S6.llm_joint.auroc}}). The
 active β audit reached {{S6.active_beta.tpr}} at {{S6.active_beta.fpr}} (AUROC {{S6.active_beta.auroc}}). The author
 maintains tirith (Appendix A).
+<!-- author TODO (GLM 5.3 roles; see Section 5, Limitations): GLM 5.3 is a subject model and also the compliance
+monitor, the classifier and both judges, and a same-model monitor may recognise its own model's outputs. Report the S6
+judge rates, and the P2 monitor effect in Section 4.1, with GLM 5.3-subject games separated. analysis/RESULT_KEYS.md
+documents no results key split by subject model, so no placeholder is added here. If the pipeline gains such keys
+(S6 rates and the P2 contrasts with GLM 5.3-subject games left out, or for those games alone), add one sentence here
+giving them beside the pooled rates; if it does not, keep only the Section 5 caveat. -->
 <!-- if the path rule's FPR is high because agents read /srv/scratch routinely: say that a rule on the path cannot tell
 exploring from communicating, which is the core of the prediction. -->
 <!-- if evasion_rate is near zero and deterrence is large: say the prediction was not borne out in this setting, and
@@ -509,8 +487,8 @@ For the spontaneous-carrier contrast, the minimum detectable effect in β_priv a
 deviation of the paired differences. The 95% upper bound on the share of SHR-AWARE games with any trace-confirmed
 private-information transfer (L3) was {{P3.l3_upper}}, and on the L3 rate per firm-turn {{P3.l3_upper_rounds}}. The
 first-mover placebo, which should be null unless some path other than storage links the firms within a round, was
-{{placebo.beta_first.est}} ({{placebo.beta_first.ci_lo}} to {{placebo.beta_first.ci_hi}}). The seed-block analysis,
-the reanalysis without fallback rounds, the host stratum and the name-exposure variant are in Table C7.
+{{placebo.beta_first.est}} ({{placebo.beta_first.ci_lo}} to {{placebo.beta_first.ci_hi}}). Table C7 has the
+sensitivity analyses.
 <!-- if P3 is null: "We can rule out spontaneous storage-mediated price dependence larger than {{P3.mde}} on average,
 and L3 transfer in more than {{P3.l3_upper}} of games, for these models at this horizon. We cannot rule out smaller
 effects, rarer events, or behaviour that appears only over longer horizons." -->
@@ -519,15 +497,15 @@ artefact) can then create apparent dependence, and every β-based claim above mu
 
 ### 4.5 Exploratory: non-storage channel attempts
 
-*Exploratory, post hoc and not pre-registered: added after the confirmatory run had started, prompted by OpenAI
-(2026c); it enters no hypothesis test.* We matched every subject command against four pattern families declared in
-`analysis/nonstorage.py` on 26 Oct 2026, before the scan was run on any confirmatory log: `/proc` and `/sys`
-resource views, mostly host-wide, timing primitives, deliberate load generation, and probes of other shared resources
-such as processes, IPC and sockets. Of {{X.nonstorage.n_firm_rounds}} subject firm-rounds,
-{{X.nonstorage.any.all.k}} (a share of {{X.nonstorage.any.all.rate}}; Wilson 95% CI {{X.nonstorage.any.all.ci_lo}}
-to {{X.nonstorage.any.all.ci_hi}}, too narrow because a firm's rounds are not independent) contained at least one
-match; Table C13 splits them by family, storage condition and arm. A match is an attempt, not a working channel or
-evidence of intent, and nothing here can confirm transfer.
+*Exploratory, post hoc and not pre-registered (D14), prompted by OpenAI (2026c); it enters no hypothesis test.* We
+matched every subject command against four pattern families declared in `analysis/nonstorage.py` before the scan
+touched any confirmatory log: `/proc` and `/sys` resource views (mostly host-wide), timing primitives, deliberate load
+generation, and probes of other shared resources such as processes, IPC and sockets. Of
+{{X.nonstorage.n_firm_rounds}} subject firm-rounds, {{X.nonstorage.any.all.k}} (a share of
+{{X.nonstorage.any.all.rate}}; Wilson 95% CI {{X.nonstorage.any.all.ci_lo}} to {{X.nonstorage.any.all.ci_hi}}, too
+narrow because a firm's rounds are not independent) contained at least one match; Table C13 splits them by family,
+storage condition and arm. A match is an attempt, not a working channel or evidence of intent, and nothing here can
+confirm transfer.
 <!-- if none matched (X.nonstorage.any.all.rate is zero): "No agent command matched; the 95% upper bound is
 {{X.nonstorage.any.all.ci_hi}} per firm-round. OpenAI's agents were mostly told which channel to probe or given a
 protocol, so this is the expected result; it bounds uninstructed attempts in this setting and says nothing about
@@ -541,41 +519,64 @@ command (Table C13 shows only short, redacted excerpts), and claim no transfer. 
 ## 5. Discussion and Limitations
 
 <!-- Rewrite the first paragraph once results are in, keeping to what the ladder rungs support. -->
-The design separates three questions that are easy to blur. Whether agents *can* use a shared folder to coordinate is
-answered by the PERMITTED arms. Whether they *do* when nobody mentions it is answered by SHR-AWARE against ISO-AWARE.
-Whether monitoring one channel pushes coordination into another is answered by the chat-monitor 2×2. [One sentence
-per answer, naming the evidence rung.] For deployment, the practical reading is about layers. A writable namespace
-shared by agents of rival principals is a channel whether or not anyone intends it; OpenAI's (2026d) safety-case
-guidelines likewise ask that high-bandwidth side channels that agents can easily find be closed. [If S2 and S6 support
-it: "Rules on commands that touch the path either fire on routine exploration or miss reads that reach it by another
-spelling, while giving each principal private storage removes the shared-file channel outright." Otherwise state
-what the gate did achieve.] The active audit tests what matters for competition, whether a firm's conduct responds to
-its rival's private information; it needs no access to the message and is, in principle, indifferent to the channel.
-A timing channel leaves no file to read, so neither a path rule like ours nor our file traces would register it; this
-is consistent with, but does not test, our prediction that command inspection is the wrong layer.
+The design separates three questions that are easy to blur: whether agents *can* use a shared folder to coordinate
+(the PERMITTED arms), whether they *do* when nobody mentions it (SHR-AWARE against ISO-AWARE), and whether monitoring
+one channel pushes coordination into another (the chat-monitor 2×2). [One sentence per answer, naming the evidence
+rung.] Under monitoring, the folder might serve only to agree an encoding for screened chat, the affordance that lets
+frontier models hide short messages from a monitor (Zolkowski et al. 2025); a CHAT-MON-SHR rise in β_priv would then
+still be displacement, but storage-carried only where traces show crossings through the folder.
 
-**Limitations.** The market is simulated and stylised, and agents with shells setting prices is a stylised deployment
-that the shared-vendor story only motivates. ISO is storage-isolated only (Section 3.3): unlike OpenAI's microVMs,
-Docker containers share a kernel, and beyond the attempt scan of Section 4.5 we did not test channels through the
-kernel, image, CPU, caches or `/proc` (Ristenpart et al. 2009; Abudraham et al. 2026; OpenAI 2026c), which canaries
-and file traces cannot see, or real CI systems. Models were reached through one gateway whose routing and
-quantisation we cannot observe, the refusal-suppressed variants are third-party, and the roster was shaped by which
-models the gateway offered. Games last 40 rounds (30 in scenarios) against the 300 of Fish et al. (2024), so slowly
-emerging tacit collusion would be missed, and agents carry memory only through their notes and files. The scripted rival never punishes deviations. We use one prompt
-family; wording matters (Fish et al. 2024), and OpenAI's production harness and system prompt cut one measured
-propensity to compromise infrastructure more than 100-fold (OpenAI 2026a).
-Self-reported reasoning is not hidden reasoning. GLM 5.3 is a subject model and also serves as the compliance monitor,
-the communication classifier and both LLM judges, so these may share its blind spots; blinding hides arm and model
-labels but not the agents' own text. Monitor coverage is partial: snapshots can miss transformed
-or suppressed reads, which are labelled unknown rather than negative, and the LLM judges see only what the harness
-logged. The confirmatory run was relaunched three times for capacity (D6, D10, D11), and about a hundred games that
-errored in network drops were re-run with the same seeds (D13). The scenario grid has three seeds per arm and model, so G is
-descriptive. Finally, the author maintains tirith, one of the monitors evaluated; Appendix A describes how this was
-handled.
+A writable namespace shared by agents of rival principals is a channel whether or not anyone intends it, and
+OpenAI's (2026d) safety-case guidelines likewise ask that high-bandwidth side channels that agents can easily find be
+closed. [One or two sentences on what S2 and S6 show about the gate against containment.]
+<!-- If S2 and S6 support it: "Rules on commands that touch the path either fire on routine exploration or miss reads
+that reach it by another spelling, while giving each principal private storage removes the shared writable path
+outright." Otherwise state what the gate did achieve. -->
+Automated search finds working bypasses for most real command denylists of AI agents (Chen and Lin 2026), so our
+rule's relative-path evasion is typical, not a strawman; still, S2 speaks to one simple path rule, not to command
+inspection as a class. The active audit tests what matters for competition, whether a firm's conduct responds to its
+rival's private information, needs no access to any message and is in principle indifferent to the channel. Timing
+channels leave no file, so neither a path rule nor our traces would see them; this fits the case against command
+inspection without testing it, but private storage does not close them either (Appendix F).
 
-**Future work.** Two extensions follow directly. A content-hidden or metadata-only arm would test action-only
-coordination through the file system. The same storage cut between an untrusted monitor and the agent it watches
-would test the AI control setting in which collusion matters most (Greenblatt et al. 2023).
+**Limitations.** The market is simulated, and agents with shells setting prices is a stylised deployment that the
+shared-vendor story only motivates. ISO is storage-isolated, not channel-free (Section 3.3, Appendix F): unlike
+OpenAI's microVMs, Docker containers share a kernel, and our firms see host-wide `/proc` views and share CPU time,
+caches and the page cache of one image, which persists between turns (Ristenpart et al. 2009; Gruss et al. 2019;
+Abudraham et al. 2026; OpenAI 2026c). The confirmatory design does not test these channels, which canaries and file
+traces cannot see (Section 4.5 counts attempts only), or real CI systems; SHR − ISO is the effect of the shared
+writable path, not of co-location.
+
+Several measures likely undercount. The compliance monitor and the classifier see one message or candidate at a time,
+so a code built up over rounds (Dineen et al. 2026) could pass both: delivered coordination under the monitor may be
+understated, and the chat part of P2 may overstate the real fall, while its β_priv part does not depend on wording.
+Passive transcript audits cannot in general rule out a covert conversation (Vaikuntanathan and Zamir 2026), and in
+one environment with emergent collusion only 2 of 229 collusive episodes put the coordination into words (Rose et al.
+2026), so the addressed-write rate and the judges can miss communication and their nulls are not evidence of absence;
+ground truth therefore comes from traces. Snapshots can also miss transformed or suppressed reads (labelled unknown),
+and the judges see only what the harness logged.
+
+GLM 5.3 is a subject model and also the compliance monitor, the classifier and both judges. Beyond shared blind
+spots, a monitor inclined to collude could do so passively, by recognising its own model's outputs without any agreed
+signal (Gardner-Challis et al. 2026), so the P2 monitor effect and S6 judge rates may be biased in GLM 5.3 games;
+blinding hides arm and model labels, not the agents' own text. Price and welfare contrasts may face a ceiling: without
+communication, some models' four-firm markets reached most of the monopoly rent over 200 rounds and others little or
+none (Lee 2026), so some ISO baselines may leave little room. A small S5 effect would then not show storage use to be
+harmless, and a large β_priv with a small price effect is coherent.
+
+Models were reached through one gateway whose routing and quantisation we cannot observe, the refusal-suppressed
+variants are third-party, and the gateway's offer shaped the roster. Games last 40 rounds (30 in scenarios) against
+the 300 of Fish et al. (2024), so slowly emerging tacit collusion would be missed; agents remember only through notes
+and files; and a short, solvable two-firm game is low-pressure next to the incident, where the board's traffic mostly
+concerned tasks no agent had solved (OpenAI 2026a), so a P3 null is scoped to this setting. The scripted rival never
+punishes. We use one prompt family, and wording matters (Fish et al. 2024): OpenAI's production harness and system
+prompt cut one measured propensity to compromise infrastructure more than 100-fold (OpenAI 2026a). Self-reported
+reasoning is not hidden reasoning, G is descriptive (three seeds per arm and model), and the author maintains tirith,
+one of the monitors evaluated (Appendix A).
+
+**Future work.** A content-hidden or metadata-only arm would test action-only coordination through the file system,
+and the same storage cut between an untrusted monitor and the agent it watches would test the AI control setting in
+which collusion matters most (Greenblatt et al. 2023).
 
 ## 6. Conclusion
 
@@ -622,6 +623,9 @@ and Collusion. American Economic Review 110(10): 3267-3297. doi:10.1257/aer.2019
 Multi-Agent Populations. AI Incident Response Sprint, Apart Research.
 https://apartresearch.com/sprints/projects/the-sentinels-dilemma-detecting-improvised-covert-channels-in-multiagent-populations-91xl
 
+Chen, C., and Lin, Z. (2026). One Goal, Many Commands: Characterizing Denylist Fragility in AI Agents.
+arXiv:2606.15549.
+
 Dineen, J., Ren, S., Chen, M., Roth, D., and Zhou, B. (2026). Despite Instructions: Frontier Agents Improvise Covert
 Channels at Test Time. arXiv:2609.32701.
 
@@ -631,11 +635,21 @@ arXiv:2404.00806 (v6: accepted to EC 2026).
 Gal-Or, E. (1986). Information Transmission: Cournot and Bertrand Equilibria. Review of Economic Studies 53(1):
 85-92. doi:10.2307/2297593
 
+Gardner-Challis, N., Bostock, J., Kozhevnikov, G., Sinclaire, M., Velja, J., Abate, A., and Griffin, C. (2026). When
+can we trust untrusted monitoring? A safety case sketch across collusion strategies. arXiv:2602.20628 (poster, NeurIPS
+2026 Workshop on Agents in the Wild).
+
 Greenblatt, R., Shlegeris, B., Sachan, K., and Roger, F. (2023). AI Control: Improving Safety Despite Intentional
 Subversion. arXiv:2312.06942.
 
+Gruss, D., Kraft, E., Tiwari, T., Schwarz, M., Trachtenberg, A., Hennessey, J., Ionescu, A., and Fogh, A. (2019). Page
+Cache Attacks. Proceedings of ACM CCS 2019, 167-180. doi:10.1145/3319535.3339809
+
 Jin, J. Y. (2000). A Comment on "A General Model of Information Sharing in Oligopoly," Vol. 71 (1996), 260-288, by
 Michael Raith. Journal of Economic Theory 93(1): 144-145. doi:10.1006/jeth.1999.2638
+
+Kemmerer, R. A. (1983). Shared Resource Matrix Methodology: An Approach to Identifying Storage and Timing Channels.
+ACM Transactions on Computer Systems 1(3): 256-277. doi:10.1145/357369.357374
 
 Keppo, J., Li, Y., Tsoukalas, G., and Yuan, N. (2026). On the Fragility of AI Agent Collusion. arXiv:2603.20281.
 
@@ -648,6 +662,9 @@ doi:10.1145/362375.362389
 
 Lee, D., and Park, H. (2026). Faithful yet Collusive: Why Chain-of-Thought Monitoring Cannot Detect Collusion in LLM
 Pricing Agents under Oligopolistic Competition. Findings of EMNLP 2026. arXiv:2609.18346.
+
+Lee, J. Y. (2026). Who Leads and Who Collects: Algorithmic Collusion in Markets of Heterogeneous Language Models.
+arXiv:2610.11256.
 
 Lermen, S., Dziemian, M., and Pimpale, G. (2024). Applying Refusal-Vector Ablation to Llama 3.1 70B Agents.
 arXiv:2410.10871.
@@ -709,6 +726,10 @@ Steganography in Multi-Agent LLM Systems. arXiv:2606.28425.
 Ristenpart, T., Tromer, E., Shacham, H., and Savage, S. (2009). Hey, You, Get Off of My Cloud: Exploring Information
 Leakage in Third-Party Compute Clouds. Proceedings of ACM CCS 2009, 199-212. doi:10.1145/1653662.1653687
 
+Rose, A., Cullen, C., Abdelnabi, S., Torr, P., Kaplowitz, B. G., and Schroeder de Witt, C. (2026). Detecting
+Multi-Agent Collusion Through Multi-Agent Interpretability. arXiv:2604.01151 (poster, NeurIPS 2026 Trustworthy AI for
+Good Workshop).
+
 Schmotz, D., Prinzhorn, D., Beurer-Kellner, L., Paulus, A., Prabhu, A., and Andriushchenko, M. (2026). Instrumental
 Monitor Evasion Emerges Under Ordinary Task Pressure. arXiv:2609.30217.
 
@@ -728,6 +749,13 @@ Markets. arXiv:2610.28787.
 UK AI Security Institute (2024). Inspect: A Framework for Large Language Model Evaluations. Software.
 https://github.com/UKGovernmentBEIS/inspect_ai
 
+US Department of Justice, Antitrust Division (1994). United States v. Airline Tariff Publishing Company et al., Civil
+Action No. 92-2854 (SSH), D.D.C.: Proposed Final Judgment, Stipulation and Competitive Impact Statement. Federal
+Register 59(62), 31 March 1994, FR Doc. 94-7672. https://www.govinfo.gov/content/pkg/FR-1994-03-31/html/94-7672.htm
+
+Vaikuntanathan, V., and Zamir, O. (2026). Undetectable Conversations Between AI Agents via Pseudorandom
+Noise-Resilient Key Exchange. arXiv:2604.04757.
+
 Vives, X. (1984). Duopoly Information Equilibrium: Cournot and Bertrand. Journal of Economic Theory 34(1): 71-94.
 doi:10.1016/0022-0531(84)90162-5
 
@@ -735,6 +763,9 @@ Xu, X., Wu, C., Lu, J., Tan, K., Tao, S., and Hong, H. (2026). Collusion with Co
 Audits Are Blind by Construction. arXiv:2607.26385.
 
 Zeng, X., and Rudzicz, F. (2026). Voluntary Collusion with Secret Tools in Competing LLM Agents. arXiv:2605.27593.
+
+Zolkowski, A., Nishimura-Gasparian, K., McCarthy, R., Zimmermann, R. S., and Lindner, D. (2025). Early Signs of
+Steganographic Capabilities in Frontier LLMs. arXiv:2507.02737 (listed as an ICLR 2026 poster).
 
 ## Appendix A. Limitations and Dual-Use / Ethical Considerations
 
@@ -798,7 +829,8 @@ first-mover placebo, Δp, scratch use, parse failures and fallbacks, with Wilson
 over models.
 
 **Table C2.** Model configurations (fixed in `harness/arms.py` and `harness/game.py` at the freeze commit). Output caps
-include reasoning tokens.
+include reasoning tokens. The broad grid's nine arms are ISO-AWARE, SHR-AWARE, ISO-PERMITTED, SHR-PERMITTED, the four
+chat arms and PROVOC; the pairs grid adds ORACLE and PROVOC-GATE-TOLD.
 
 | Grid (arms; games per configuration) | Configuration | nanoGPT model ID | Reasoning effort | max_tokens |
 |---|---|---|---|---|
@@ -892,6 +924,62 @@ the gate fails closed if the hash differs. The three tirith policies are defined
 `report/APPENDIX.md`, Section E; `analysis/monitors.py` replays every monitor on the logs. Results are regenerated
 from the Inspect logs by `analysis/report_outputs.py`, which in confirmatory mode refuses to run on incomplete or
 unadjudicated data, and `tools/fill_report.py` fills this report from its outputs.
+
+**Table E1. Pre-registered hypotheses** (`prereg/PREREGISTRATION.md`, Section 4; summarised in Section 3.7). P1-P3
+are the primary family, with Holm correction; the rest are secondary.
+
+| ID | Hypothesis | Test |
+|---|---|---|
+| P1 | Permission raises adjudicated addressed storage communication more with shared than with private storage | Four-arm interaction (SHR-PERMITTED − SHR-AWARE) − (ISO-PERMITTED − ISO-AWARE) on the addressed-write rate, matched seeds; β interaction supporting |
+| P2 | Displacement: delivered chat coordination falls under the monitor **and** storage-mediated action dependence rises specifically in CHAT-MON-SHR (both required) | Monitor × storage interaction on second-mover β_priv, stratified by model and seed, plus the fall in delivered coordination |
+| P3 | Spontaneous carrier: β_priv is higher in SHR-AWARE than in ISO-AWARE. **Predicted near zero** | Paired game-level contrast; a null is reported with event-rate upper limits and the MDE |
+| S1 | Honeypot: reading, acceptance and preferential pricing are higher in PROVOC than in HINT and BENIGN | Rates and Δp by model |
+| S2 | Gate 2×2: deterrence, blocking and evasion | Main effects, interaction, evasion taxonomy |
+| S3 | Descriptive model-variant differences (GLM 5.3 vs Abliterated Large; GLM 5.2; DeepSeek V4.1 Flash vs Abliterated Large Flash) | Within-configuration estimates; no causal claim |
+| S4 | β_priv versus β_com when a channel is used | Pooled, game-clustered |
+| S5 | Matched SHR − ISO consumer-surplus difference over all matched pairs | Matched-seed effects, game-level intervals |
+| S6 | Monitors: active β audit versus passive audits; joint versus per-firm judge; stock tirith as a negative control | TPR at an achieved FPR; AUROC where class counts allow |
+| G | Scenario transfer of the P1 and P3 contrasts | Descriptive, stratified by model, engine and scenario |
+
+**Estimator checks.** In a simulation with strong feedback, the default β estimators (Section 3.8) were unbiased (mean
+β −0.003, Monte Carlo SE 0.003), with size 0.048 for the wild cluster bootstrap and 0.046 for CR1 errors. The textbook
+game-fixed-effects form suffers Nickell bias (mean −0.069) and appears only as a sensitivity check (Table C7).
+
+**Changes to the plan** (`prereg/DEVIATIONS.md`). Five changes were made during the pilot and are reflected in the
+frozen text (D1-D5): conservative budget bookkeeping for missing gateway costs, higher output caps for all arms,
+keeping 40-round core games, and running on several machines with every gated game on the one that holds the pinned
+tirith binary. The rest came after the confirmatory run had started. The runners were stopped and relaunched four
+times: to rebalance work across machines, to protect a machine that also served a production website (D6, D10, D11)
+and to move the remaining games onto code whose retry handling rides out network drops (D13, D15). Drops on three
+hosts made about 146 games error in total. Errored and stopped games were re-run from the start with the same seeds,
+hence the same draws, move order and canaries; partial transcripts of stopped games are not analysed, and game logic
+never reads the clock or the host. Games completed twice because of a relaunch keep the copy that finished first, an
+outcome-blind rule declared before any analysis (D12). D8, D8a and D9 concern budget reconciliation and clarify the frozen text.
+Analysis definitions fixed after the freeze but before any confirmatory analysis are listed in D7 and labelled where
+used: honeypot acceptance (Section 4.2), the S6 evaluation set (Table 2) and the transcript-excerpt rule (Appendix D).
+The exploratory scan of attempts at channels other than storage was declared before it touched any confirmatory log
+(D14, Section 4.5); it changes no pre-registered analysis.
+
+## Appendix F. Channel taxonomy
+
+Table F1 places the storage cut among the ways in which co-located agents could pass information, following the
+classical split of covert channels (Lampson 1973) into storage and timing channels (Kemmerer 1983). SHR − ISO
+estimates the effect of the shared writable path (the first two rows) on top of everything the other rows leave in
+place; it is not an estimate of the effect of co-location. "Tests" means that the design can detect use of a channel,
+not that it can rule use out.
+The extensions and further exploratory analyses of Section 4.6 are not summarised here.
+
+**Table F1.** Channel classes: examples and sources, what our design tests, and what it does not test.
+
+| Channel | Examples and sources | What our design tests | What it does not test |
+|---|---|---|---|
+| Storage content | A package repository turned into a message board (OpenAI 2026b; METR 2026); notes left in shared training infrastructure (OpenAI 2026e); a wiki (Lütje 2026); a rebuild of the incident's channel in containers (Çanlı, Kesikbaş and Yakar 2026) | The core manipulation, `/srv/scratch` shared (SHR) or private (ISO), in P1-P3, the honeypot (S1) and the gate 2×2 (S2), scored by canary and content crossings (L1, L3), adjudicated addressed writes (L2) and β_priv | Other real shared namespaces (package or CI caches, wikis), persistence over days, more than two agents |
+| Storage metadata | File names, existence, counts, sizes, timestamps and permissions used as signals (cf. Kemmerer 1983); directory names that carried messages in the incident (OpenAI 2026b) | In part: name exposures are labelled (a sensitivity), and β_priv would register any resulting price dependence on the rival's private cost | Content-free signals, such as a number of empty files, are unlikely to be coded as addressed communication, and there is no metadata-only arm (Section 5) |
+| Explicit chat | Seller chat under an overseer in LLM double auctions (Agrawal et al. 2025); the pilot chat game (Section 3.10) | CHAT-ISO as the collusion positive control, and the chat-monitor 2×2 (P2), with delivered coordination coded one message at a time | A monitor that sees the conversation history (ours screens each message alone); a monitor from another model family (ours is GLM 5.3) |
+| Steganography in chat | Hidden messages that evade a monitor (Motwani et al. 2024; Mathew et al. 2025), which frontier models manage mainly when they can first agree an encoding unmonitored (Zolkowski et al. 2025); codes improvised over repeated rounds (Dineen et al. 2026); covert conversations that a transcript auditor cannot tell from honest ones (Vaikuntanathan and Zamir 2026) | Only indirectly: β_priv measures the information effect whatever the wording | Detection: the monitor and the classifier read single items and have no decoder, so coded messages could pass both (Section 5) |
+| Signalling in public actions | Codes in fare filings to a shared publishing service, as alleged by the US Department of Justice (1994); tacit algorithmic and LLM price coordination (Calvano et al. 2020; Fish et al. 2024; Lee 2026) | Present in every arm, ISO included, so SHR − ISO nets it out of Δp and consumer surplus (S5); a within-round β_priv cannot come from it (Section 3.6) | Whether prices encode private information across rounds, for example in low-order digits |
+| Hardware and timing side channels | Cache timing and CPU contention between microVMs (OpenAI 2026c); co-resident cloud VMs (Ristenpart et al. 2009); speculative execution (Kocher et al. 2019); the page cache (Gruss et al. 2019; Abudraham et al. 2026); in this design, also host-wide `/proc` counters and turn timing (inferred, untested) | Attempts only, through the exploratory command scan (Section 4.5); sequential turns and the killing of leftover processes limit live contention channels | Whether any such channel works here: canaries and file traces cannot see one, and the page cache and the host state behind host-wide `/proc` views persist between turns, so ISO does not remove them (Section 3.3) |
+| Shared services | A TLS certificate cache (OpenAI 2026c); a shared fare-publishing service (US Department of Justice 1994); here, the inference gateway, provider caches, Docker daemon and harness | Nothing directly: the host, harness, gateway and providers are trusted by assumption (Section 1), and the bulletin is a sanctioned read-only channel, identical for both firms in every arm | Leakage through the gateway or provider caches, which would matter in a real shared-vendor deployment |
 
 ## LLM Usage Statement
 

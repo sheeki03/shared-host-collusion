@@ -1,7 +1,8 @@
 % References for report/REPORT.md.
 % Every entry was checked on 25 Oct 2026 against a primary record: the arXiv API (title, authors, first-version
 % date, comments), Crossref (DOI metadata) or the publisher / project page itself. Entries that could not be checked
-% (TCSEC 1985, legal cases, several sprint projects listed in the plan) are deliberately left out.
+% (TCSEC 1985, legal cases, several sprint projects listed in the plan) are deliberately left out. One legal record was
+% added on 26 Oct 2026 because it was checked against its primary source: doj1994atpco (Federal Register, govinfo).
 % Re-checked in review on 25 Oct 2026 (~23:20 IST): all 21 arXiv IDs (title, authors, date) and the abstracts of the
 % papers whose findings the report states; the 6 DOIs through Crossref; the PMLR, METR, Apart sprint, Poseidon and
 % GitHub pages. The report's descriptions of 2026 papers stay within what their abstracts say.
@@ -413,6 +414,100 @@
   eprint        = {2410.10871},
   archivePrefix = {arXiv},
   url           = {https://arxiv.org/abs/2410.10871}
+}
+
+% ---------------------------------------------------------------- added 26 Oct 2026 from the literature sweep
+% Source: runs/dev/literature_sweep.json (verified 26 Oct 2026): arXiv API re-check of titles, authors and dates, with
+% every claim the report states taken from the abstract (Lee 72-79% vs little or none; Rose 2 of 229; Chen and Lin
+% 69.0-98.6%); Crossref for gruss2019pagecache and kemmerer1983shared; neurips.cc for the two workshop posters; the
+% ICLR 2026 listing for zolkowski2025early (track unclear, so cited as arXiv); govinfo for doj1994atpco. The report
+% paraphrases all of them and quotes none. lee2026wholeads is a different paper from lee2026faithful.
+% Re-checked in review on 26 Oct 2026: the six arXiv IDs (titles, authors, dates, abstracts) through the arXiv API,
+% both DOIs through Crossref (Kemmerer's title includes its Crossref subtitle), and the govinfo text of FR Doc.
+% 94-7672 (the case was settled by consent judgment without adjudication, so the report says "alleged").
+@misc{lee2026wholeads,
+  author        = {Lee, Jun Yeong},
+  title         = {Who Leads and Who Collects: Algorithmic Collusion in Markets of Heterogeneous Language Models},
+  year          = {2026},
+  eprint        = {2610.11256},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2610.11256}
+}
+
+@misc{doj1994atpco,
+  author       = {{U.S. Department of Justice, Antitrust Division}},
+  title        = {United States v. Airline Tariff Publishing Company et al., Civil Action No. 92-2854 (SSH), D.D.C.: Proposed Final Judgment, Stipulation and Competitive Impact Statement},
+  year         = {1994},
+  howpublished = {Federal Register 59(62), 31 Mar 1994, FR Doc. 94-7672},
+  url          = {https://www.govinfo.gov/content/pkg/FR-1994-03-31/html/94-7672.htm}
+}
+
+@misc{zolkowski2025early,
+  author        = {Zolkowski, Artur and Nishimura-Gasparian, Kei and McCarthy, Robert and Zimmermann, Roland S. and Lindner, David},
+  title         = {Early Signs of Steganographic Capabilities in Frontier {LLMs}},
+  year          = {2025},
+  eprint        = {2507.02737},
+  archivePrefix = {arXiv},
+  note          = {Listed as an ICLR 2026 poster},
+  url           = {https://arxiv.org/abs/2507.02737}
+}
+
+@misc{vaikuntanathan2026undetectable,
+  author        = {Vaikuntanathan, Vinod and Zamir, Or},
+  title         = {Undetectable Conversations Between {AI} Agents via Pseudorandom Noise-Resilient Key Exchange},
+  year          = {2026},
+  eprint        = {2604.04757},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2604.04757}
+}
+
+@misc{rose2026detecting,
+  author        = {Rose, Aaron and Cullen, Carissa and Abdelnabi, Sahar and Torr, Philip and Kaplowitz, Brandon Gary and Schroeder de Witt, Christian},
+  title         = {Detecting Multi-Agent Collusion Through Multi-Agent Interpretability},
+  year          = {2026},
+  eprint        = {2604.01151},
+  archivePrefix = {arXiv},
+  note          = {Poster at the NeurIPS 2026 Trustworthy AI for Good (AI4GOOD) Workshop},
+  url           = {https://arxiv.org/abs/2604.01151}
+}
+
+@misc{gardnerchallis2026untrusted,
+  author        = {Gardner-Challis, Nelson and Bostock, Jonathan and Kozhevnikov, Georgiy and Sinclaire, Morgan and Velja, Joan and Abate, Alessandro and Griffin, Charlie},
+  title         = {When can we trust untrusted monitoring? {A} safety case sketch across collusion strategies},
+  year          = {2026},
+  eprint        = {2602.20628},
+  archivePrefix = {arXiv},
+  note          = {Poster at the NeurIPS 2026 Workshop on Agents in the Wild},
+  url           = {https://arxiv.org/abs/2602.20628}
+}
+
+@misc{chen2026denylist,
+  author        = {Chen, Chuyang and Lin, Zhiqiang},
+  title         = {One Goal, Many Commands: Characterizing Denylist Fragility in {AI} Agents},
+  year          = {2026},
+  eprint        = {2606.15549},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2606.15549}
+}
+
+@inproceedings{gruss2019pagecache,
+  author    = {Gruss, Daniel and Kraft, Erik and Tiwari, Trishita and Schwarz, Michael and Trachtenberg, Ari and Hennessey, Jason and Ionescu, Alex and Fogh, Anders},
+  title     = {Page Cache Attacks},
+  booktitle = {Proceedings of the 2019 ACM SIGSAC Conference on Computer and Communications Security (CCS)},
+  pages     = {167--180},
+  year      = {2019},
+  doi       = {10.1145/3319535.3339809}
+}
+
+@article{kemmerer1983shared,
+  author  = {Kemmerer, Richard A.},
+  title   = {Shared Resource Matrix Methodology: An Approach to Identifying Storage and Timing Channels},
+  journal = {ACM Transactions on Computer Systems},
+  volume  = {1},
+  number  = {3},
+  pages   = {256--277},
+  year    = {1983},
+  doi     = {10.1145/357369.357374}
 }
 
 % ---------------------------------------------------------------- software
