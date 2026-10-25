@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -107,6 +108,8 @@ def test_planted_effects_recovered_confirmatory(synthetic):
     r = synthetic.res
     assert r["meta.preliminary"] is False and r["meta.n_complete"] == r["meta.n_games"] == 96
     assert r["meta.ledger_reconciled"] is True and r["L2.status"] == "complete"
+    assert r["meta.total_cost_usd"] == pytest.approx(r["meta.cost_kept_games_usd"])
+    assert "analysed complete-game calls only" in r["meta.cost_scope"]
     assert r["meta.n_rounds"] == 96 * ROUNDS and r["meta.hosts"] == "hostA, hostB"
     # P1: permission x storage interaction on adjudicated addressed writes.
     assert r["P1.l2.diff"] == pytest.approx(P1_TRUE, abs=1e-9) and r["P1.l2.ci_lo"] > 0
@@ -234,7 +237,17 @@ def test_no_complete_games_is_pending_not_zero(synthetic, tmp_path):
 
 def test_fill_report_resolves_sample_template(tmp_path):
     fr = _fill_report()
-    res = {"meta.preliminary": False, "meta.n_games": 1131, "P1.l2.diff": 0.25, "P1.l2.ci_lo": 0.1,
+    abstract = ("We tested a simulated market with two agents and matched storage conditions. "
+                "Private signals, command traces and prices were recorded for each round. "
+                "This small fixture checks only report rendering and not a scientific result. ") * 5
+
+    def shell(body):
+        return (f"# Fixture\n\n## Abstract\n\n{abstract}\n\n## 1. Results\n\n{body}\n\n"
+                "## LLM Usage Statement\n\nThe author used tools for drafting and checked all generated text.\n")
+
+    assert 150 <= len(fr.WORD.findall(abstract)) <= 250
+    res = {"meta.preliminary": False, "meta.cohort": "confirmatory", "meta.n_games": 1131,
+           "P1.l2.diff": 0.25, "P1.l2.ci_lo": 0.1,
            "P1.l2.ci_hi": 0.4, "P1.l2.p_holm": 0.0004, "P3.beta.p": 0.4321, "P2.supported": True,
            "S6.tirith_stock.auroc": 0.512, "P3.mde": "pending", "meta.total_cost_usd": 812.345}
     (tmp_path / "results.json").write_text(json.dumps(res))
@@ -244,9 +257,10 @@ def test_fill_report_resolves_sample_template(tmp_path):
     (tmp_path / "figures" / "displacement.png").write_bytes(b"\x89PNG")
     report = tmp_path / "report" / "REPORT.md"
     report.parent.mkdir()
-    report.write_text("N={{meta.n_games}}; P1 {{P1.l2.est_ci}} (Holm p {{P1.l2.p_holm}}), CI {{P1.l2.ci}}; "
-                      "p3 {{P3.beta.p}}; P2 {{P2.supported}}; AUROC {{S6.tirith_stock.auroc}}; "
-                      "cost ${{meta.total_cost_usd}}\n{{TABLE:per_arm_rates}}\n{{FIG:displacement}}\n")
+    report.write_text(shell("N={{meta.n_games}}; P1 {{P1.l2.est_ci}} (Holm p {{P1.l2.p_holm}}), "
+                            "CI {{P1.l2.ci}}; p3 {{P3.beta.p}}; P2 {{P2.supported}}; "
+                            "AUROC {{S6.tirith_stock.auroc}}; cost ${{meta.total_cost_usd}}\n"
+                            "{{TABLE:per_arm_rates}}\n{{FIG:displacement}}\n"))
     args = ["--report", str(report), "--results", str(tmp_path / "results.json")]
     assert fr.main(args + ["--confirmatory"]) == 0
     text = (tmp_path / "report" / "REPORT.filled.md").read_text()
@@ -255,7 +269,7 @@ def test_fill_report_resolves_sample_template(tmp_path):
     report.write_text("{{P3.mde}} {{NOPE.key}} {{TABLE:missing}}")
     assert fr.main(args) == 0                     # draft mode lists unresolved but succeeds
     assert fr.main(args + ["--confirmatory"]) == 1
-    assert "{{NOPE.key}}" in (tmp_path / "report" / "REPORT.filled.md").read_text()
+    assert not (tmp_path / "report" / "REPORT.filled.md").exists()
     res["meta.preliminary"] = True
     (tmp_path / "results.json").write_text(json.dumps(res))
     report.write_text("{{meta.n_games}}")
@@ -269,13 +283,13 @@ def test_fill_report_resolves_sample_template(tmp_path):
     (tmp_path / "results.json").write_text(json.dumps(res))
     report.write_text("{{S1.dp.PROVOC.est_ci}} {{X.ci}}")
     assert fr.main(args) == 0 and fr.main(args + ["--confirmatory"]) == 1
-    assert (tmp_path / "report" / "REPORT.filled.md").read_text() == "0.4 [n/a, n/a] literal"
+    assert not (tmp_path / "report" / "REPORT.filled.md").exists()
     # Excerpts from tools/pick_excerpts.py: confirmatory excerpts fill, pilot excerpts block --confirmatory.
-    report.write_text("{{EXCERPT:1}}")
+    report.write_text(shell("{{EXCERPT:1}}"))
     (tmp_path / "excerpts.json").write_text(json.dumps({"EXCERPT:1": {"markdown": "> quoted turn\n", "pilot": False}}))
     (tmp_path / "results.json").write_text(json.dumps({"meta.preliminary": False, "meta.cohort": "confirmatory"}))
     assert fr.main(args + ["--confirmatory"]) == 0
-    assert (tmp_path / "report" / "REPORT.filled.md").read_text() == "> quoted turn"
+    assert "> quoted turn" in (tmp_path / "report" / "REPORT.filled.md").read_text()
     (tmp_path / "excerpts.json").write_text(json.dumps({"EXCERPT:1": {"markdown": "pilot", "pilot": True}}))
     assert fr.main(args) == 0 and fr.main(args + ["--confirmatory"]) == 1
 
@@ -421,6 +435,12 @@ def test_s6_tables_copy_the_tool_table_and_render_the_headline(s6_tool, tmp_path
     head = (tdir / "monitors_headline.md").read_text()
     assert not head.startswith("_No data yet._") and all(m in head for m in M.MONITORS)
     assert "canary or content" in head and (tdir / "monitors_headline.csv").exists()
+    assert "budgeted, trace-stratified sample" in head and "content alone need not be private information" in head
+    rows = ro.s6_headline_table(ctx.res).set_index("monitor")
+    assert rows.loc["llm_joint", "scored cohort"] == "budgeted judge sample"
+    assert rows.loc["tirith_path", "scored cohort"] == "full eligible evaluation set"
+    paired = (tdir / "monitors_paired.md").read_text()
+    assert all(m in paired for m in M.MONITORS) and "same selected judge-game set" in paired
     # writing into the monitors tool's own output directory never overwrites its table
     before = s6_tool.paths["table"].read_bytes()
     same = ro.Ctx(cfg=ro.Config(log_dirs=[], monitor_results=str(s6_tool.paths["keys"]), preliminary=True,
@@ -807,3 +827,79 @@ def test_d12_monitors_see_the_same_game_set(tmp_path, monkeypatch):
     r = ro.run(ro.Config(**d.cfg, monitor_results=str(out / "monitor_results.json"), out=str(tmp_path / "rep")))
     assert r["S6.sync.match"] is True and r["S6.sync.n_missing"] == r["S6.sync.n_extra"] == 0
     assert r["S6.n_duplicates_dropped"] == r["meta.n_duplicates_dropped"] == 3
+
+
+def _trace_case(tmp_path, monkeypatch, states):
+    """One real-format game, with a planted trace-label coverage pattern."""
+    sample = deepcopy(next(s for s in _samples() if s.metadata["model_label"] == "m1"
+                           and s.metadata["seed"] == 1000 and s.metadata["arm"] == "SHR-AWARE"))
+    rows = sample.metadata["result"]["rows"]
+    assert len(states) == len(rows)
+    for row, (status, canary) in zip(rows, states):
+        row["crossing_status"] = status
+        row["crossing_canary"] = canary
+    monkeypatch.setattr(dataset, "list_eval_logs", lambda _: [SimpleNamespace(name="trace.eval")])
+    monkeypatch.setattr(dataset, "read_eval_log", lambda _: SimpleNamespace(status="success", samples=[sample]))
+    tables = dataset.load(str(tmp_path), cohort="confirmatory")
+    gid = sample.metadata["game_id"]
+    comm = pd.DataFrame({"game_id": [gid], "addressed_write_rate": [0.0], "chat_coordination": [0.0]})
+    ctx = ro.Ctx(cfg=ro.Config(log_dirs=[str(tmp_path)], preliminary=True, out=str(tmp_path / "out"), figures=False))
+    games = ro.build_games(ctx, tables, comm, None)
+    ro.mde_and_bounds(ctx, games, None)
+    return games.iloc[0], ctx.res
+
+
+def test_all_unknown_trace_turns_do_not_become_negative(tmp_path, monkeypatch):
+    game, res = _trace_case(tmp_path, monkeypatch, [("unknown", False)] * (ROUNDS * 2))
+    assert pd.isna(game["l3_any"]) and pd.isna(game["l1_any"])
+    assert pd.isna(game["l3_rate"]) and game["l3_rate_n_known"] == 0
+    assert game["l3_rate_n_unknown"] == ROUNDS * 2
+    assert res["L3.game_rate.SHR-AWARE.n"] == 0
+    assert res["L3.game_rate.SHR-AWARE.n_unknown"] == 1
+    assert res["L3.round_rate.SHR-AWARE.n_unknown"] == ROUNDS * 2
+    assert res["P3.l3_upper"] == 1.0 and res["P3.l1_upper"] == 1.0
+
+
+def test_mixed_unknown_and_negative_trace_uses_only_verified_turns(tmp_path, monkeypatch):
+    states = [("unknown", False)] + [("negative", False)] * (ROUNDS * 2 - 1)
+    game, res = _trace_case(tmp_path, monkeypatch, states)
+    assert pd.isna(game["l3_any"]) and game["l3_rate"] == 0
+    assert game["l3_rate_n_known"] == ROUNDS * 2 - 1
+    assert res["L3.round_rate.SHR-AWARE.n"] == ROUNDS * 2 - 1
+    assert res["L3.round_rate.SHR-AWARE.n_unknown"] == 1
+    assert res["P3.l3_upper_rounds"] == pytest.approx(4 / (ROUNDS * 2))
+    assert res["P3.l3_upper"] == 1.0  # the one game is unverified, never counted as a negative
+
+
+def test_positive_and_unknown_trace_preserves_positive_with_coverage(tmp_path, monkeypatch):
+    states = [("positive", True), ("unknown", False)] + [("negative", False)] * (ROUNDS * 2 - 2)
+    game, res = _trace_case(tmp_path, monkeypatch, states)
+    assert bool(game["l3_any"]) and bool(game["l1_any"])
+    assert game["l3_rate_n_positive"] == 1 and game["l3_rate_n_unknown"] == 1
+    assert res["L3.game_rate.SHR-AWARE.k"] == res["L3.game_rate.SHR-AWARE.n"] == 1
+    assert res["L3.game_rate.SHR-AWARE.n_unknown"] == 0
+    assert res["L3.round_rate.SHR-AWARE.n_unknown"] == 1
+
+
+def test_host_consistent_subset_drops_cross_host_matched_quads():
+    arms = ro.PRIMARY_P1
+    rows = [{"game_id": f"g:{seed}:{arm}", "model": "m1", "scenario": "core-pricing", "seed": seed,
+             "arm": arm, "host": ("mac" if seed == 1000 or arm != "SHR-PERMITTED" else "vps")}
+            for seed in (1000, 1001) for arm in arms]
+    kept, n_complete, n_mixed = ro.host_consistent_subset(pd.DataFrame(rows), arms)
+    assert (n_complete, n_mixed) == (2, 1)
+    assert set(kept["seed"]) == {1000} and set(kept["arm"]) == set(arms)
+
+
+def test_welfare_itt_survives_unknown_transfer_without_false_negative_subset():
+    rows = []
+    for seed in (1000, 1001):
+        for arm, welfare in (("SHR-AWARE", 101.0), ("ISO-AWARE", 100.0)):
+            unknown = arm == "SHR-AWARE" and seed == 1000
+            rows.append({"model": "m1", "scenario": "core-pricing", "seed": seed, "arm": arm,
+                         "welfare": welfare, "transfer_observed": pd.NA if unknown else False})
+    ctx = ro.Ctx(cfg=ro.Config(log_dirs=[], preliminary=True, n_boot=99, n_perm=128))
+    ro.s5_welfare(ctx, pd.DataFrame(rows))
+    assert ctx.res["S5.cs.diff"] == pytest.approx(1.0)  # all matched pairs remain in the ITT effect
+    assert "uncertain crossing" in ctx.res["S5.cs_transfer_status"]
+    assert "S5.cs_transfer_negative.n_pairs" not in ctx.res
