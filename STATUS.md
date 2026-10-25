@@ -68,9 +68,15 @@ Times are IST. Newest entries at the bottom of each step.
 - 505 of 1,131 games complete at the 01:30 sync (D12 rule: 8 duplicates, first-finished copy kept). Remaining games run on the instabox hosts; ETA about 03:15–03:30 IST.
 - Spend: about $464 real by 02:09; balance $664.55.
 
-## Analysis, report and additions built overnight (all pre-declared before their data)
+## Analysis, report and additions built overnight (timing and status in D7, D16–D18)
 - Analysis machinery: report_outputs, game_set (D12), llm_coder (pinned rubric), monitors (S6), coding fixes, ledger union reconciliation (D8/D8a).
-- Report draft `report/REPORT.md` (placeholders only for results), `report/APPENDIX.md` (generated), `report/references.bib` (54 verified), channel taxonomy (Appendix F), OpenAI Oct 2026 sandbox red-teaming context (D14 scan).
+- Report draft `report/REPORT.md` (placeholders only for results), `report/APPENDIX.md` (generated), `report/references.bib` (53 BibTeX entries at this review), channel taxonomy (Appendix F), OpenAI Oct 2026 sandbox red-teaming context (D14 scan).
 - Extensions E1–E5 (`prereg/EXTENSIONS.md`, harness D17): replication, 100-round horizon, ISO-ANY, secret exchange, price signalling; 216 games, run after the main grid.
 - Exploratory A1–A4 (`prereg/EXPLORATORY.md`, D16): message leakage probe, note-to-board pathway, price-digit audit, ISO residual-channel calibration (idle run on 161.97.142.53 started 02:04).
 - Review page for the owner: https://claude.ai/artifact/VWPxkkiKVfsdVHbmp6bPrd (private).
+
+## Second-review checkpoint (Mon 26 Oct ~02:28 IST)
+- Fresh read-only sync showed 671/1,131 complete games at 02:20; the last active host projected roughly 04:22 if its rate held. The progress tool was fixed to exclude copied ledgers as a ghost host; its local ledger settlements are not the actual account bill.
+- A separate L2 coder and S6 judge job were already running on the partial log set. Owner approved a **$50 total L2 coder cap**; an atomic cap-change event raised its existing private ledger from $12 without resetting spend or starting another process. The final coding and judged-game sets must match the strict completed-game set after final sync.
+- Review fixes underway: trace-unknown null denominators and host-consistent sensitivities, post-freeze/deviation wording, report containment/monitor/cost claims, and a fail-closed editorial export gate. The required LLM Usage Statement remains for the author to supply; raw-log release will be decided after submission.
+- A private working copy of the official Google Docs template exists for layout QA. It contains a marked draft without final figures/results and is not shared or submitted. The PDF page count remains unverified pending an accessible PDF from the owner.
