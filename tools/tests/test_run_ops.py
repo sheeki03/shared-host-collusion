@@ -461,6 +461,8 @@ def test_progress_ignores_copied_ledgers_directory_as_a_host(tmp_path):
     (host_dir / "ledger-instabox-v5.jsonl").write_text(ledger)
     (copies_dir / "ledger-instabox-v5.jsonl").write_text(ledger)
     (host_dir / "sync_state.json").write_text(json.dumps({"host": "instabox", "logs_last_success": t0.isoformat()}))
+    # Even if an archive later gains metadata, its reserved name cannot turn it into a host.
+    (copies_dir / "sync_state.json").write_text(json.dumps({"host": "ledgers"}))
 
     rounds = {"g1": 3, "g2": 3}
     runs, hosts = progress.collect_runs(root, rounds, t0 + timedelta(minutes=10), local_runners=set())
