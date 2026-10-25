@@ -168,6 +168,49 @@
   url           = {https://arxiv.org/abs/2606.09931}
 }
 
+% Hardware and timing channels between co-resident tenants (added 26 Oct 2026). ristenpart2009cloud: author page and
+% full PDF; DOI resolves to the ACM DL. kocher2019spectre: DOI resolves to IEEE Xplore 8835233; CSDL confirms S&P 2019
+% pp. 1-19. abudraham2026pagecache and dineen2026despite: arXiv abstract pages only (no venue); the report states only
+% what the abstracts say.
+@inproceedings{ristenpart2009cloud,
+  author    = {Ristenpart, Thomas and Tromer, Eran and Shacham, Hovav and Savage, Stefan},
+  title     = {Hey, You, Get Off of My Cloud: Exploring Information Leakage in Third-Party Compute Clouds},
+  booktitle = {Proceedings of the 16th ACM Conference on Computer and Communications Security (CCS '09)},
+  pages     = {199--212},
+  publisher = {ACM},
+  year      = {2009},
+  doi       = {10.1145/1653662.1653687}
+}
+
+@inproceedings{kocher2019spectre,
+  author        = {Kocher, Paul and Horn, Jann and Fogh, Anders and Genkin, Daniel and Gruss, Daniel and Haas, Werner and Hamburg, Mike and Lipp, Moritz and Mangard, Stefan and Prescher, Thomas and Schwarz, Michael and Yarom, Yuval},
+  title         = {Spectre Attacks: Exploiting Speculative Execution},
+  booktitle     = {2019 IEEE Symposium on Security and Privacy (SP)},
+  pages         = {1--19},
+  year          = {2019},
+  doi           = {10.1109/SP.2019.00002},
+  eprint        = {1801.01203},
+  archivePrefix = {arXiv}
+}
+
+@misc{abudraham2026pagecache,
+  author        = {Abudraham, Alon and Chen, Xingyu and Levi, Itamar and Trachtenberg, Ari},
+  title         = {Isolation Failure From Shared Storage: Characterizing and Exploiting Page-Cache {SCA} Leakage Across Containers and {VMs}},
+  year          = {2026},
+  eprint        = {2607.17518},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2607.17518}
+}
+
+@misc{dineen2026despite,
+  author        = {Dineen, Jacob and Ren, Silei and Chen, Muhao and Roth, Dan and Zhou, Ben},
+  title         = {Despite Instructions: Frontier Agents Improvise Covert Channels at Test Time},
+  year          = {2026},
+  eprint        = {2609.32701},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2609.32701}
+}
+
 @misc{motwani2024secret,
   author        = {Motwani, Sumeet Ramesh and Baranchuk, Mikhail and Strohmeier, Martin and Bolina, Vijay and Torr, Philip H. S. and Hammond, Lewis and Schroeder de Witt, Christian},
   title         = {Secret Collusion among {AI} Agents: Multi-Agent Deception via Steganography},
@@ -234,6 +277,58 @@
   howpublished = {METR blog, 26 Aug 2026},
   note         = {Contributors listed on the post: Ryan Greenblatt, Ajeya Cotra, Hjalmar Wijk},
   url          = {https://metr.org/blog/2026-08-26-openai-hugging-face-incident-investigation/}
+}
+
+% OpenAI primary sources (added 26 Oct 2026), read in full on the publisher pages (openai.com pages scraped through
+% Firecrawl because direct fetches returned 403). The report's labels 2026a-e follow title order, ignoring a leading
+% "The". The technical-report URL contains %20; escape it if a LaTeX toolchain is added. Do not copy the training-corpus
+% canary strings printed at the end of openai2026securing.
+@misc{openai2026hfroadahead,
+  author       = {{OpenAI}},
+  title        = {The {Hugging Face} incident and the road ahead},
+  year         = {2026},
+  month        = aug,
+  howpublished = {OpenAI blog, 26 Aug 2026},
+  url          = {https://openai.com/index/hugging-face-incident-and-the-road-ahead/}
+}
+
+@techreport{openai2026hftechreport,
+  author      = {{OpenAI}},
+  title       = {{OpenAI} -- {Hugging Face} Incident Technical Report},
+  institution = {OpenAI},
+  year        = {2026},
+  month       = aug,
+  note        = {Released 26 Aug 2026 with the blog post ``The Hugging Face incident and the road ahead''},
+  url         = {https://cdn.openai.com/pdf/67869394-cb91-4c12-888c-5cbd85c7814c/OpenAI-Hugging-Face%20Incident-Technical-Report.pdf}
+}
+
+@misc{openai2026securing,
+  author       = {{OpenAI}},
+  title        = {Securing our frontier model training environment},
+  year         = {2026},
+  month        = oct,
+  howpublished = {OpenAI blog (Security / Publication), 23 Oct 2026},
+  note         = {See section ``Communicating across isolated tasks''},
+  url          = {https://openai.com/index/securing-our-frontier-model-training-environment/}
+}
+
+@misc{openai2026safetycases,
+  author       = {{OpenAI}},
+  title        = {Towards safety cases for frontier {AI} training},
+  year         = {2026},
+  month        = sep,
+  howpublished = {OpenAI blog, 28 Sep 2026},
+  url          = {https://openai.com/index/towards-safety-cases-for-frontier-ai-training/}
+}
+
+@misc{openai2026artifactory,
+  author       = {{OpenAI}},
+  title        = {Unsanctioned {Artifactory} writes and cross-sample communication},
+  year         = {2026},
+  month        = sep,
+  howpublished = {OpenAI Alignment, Misalignment Reports and Notices; first posted 16 Sep 2026},
+  note         = {Incidents of 8 and 15 May 2026},
+  url          = {https://alignment.openai.com/misalignment-reports/unauthorized-artifactory-writes-and-cross-sample-communication/}
 }
 
 @misc{lutje2026swarm,
