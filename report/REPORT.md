@@ -920,7 +920,8 @@ harness aborted it after firm A started a background process to keep publishing 
 leftover processes are reaped after every command (Section 3.3), and the harness ends a game whose cleanup cannot be
 verified. Both firms had
 already exchanged codes there. It was not re-run, since further attempts would select on the behaviour under study
-(DEVIATIONS D24). Codes are fresh and turns sequential, so only the second mover in a round can have seen its partner's
+(DEVIATIONS D24). Three Opus 5.5 SX-ISO games are excluded by the pre-registered rule for more than 20% unparsed
+steps. Codes are fresh and turns sequential, so only the second mover in a round can have seen its partner's
 code before guessing: success per firm-round cannot exceed 0.5, and a chance hit has probability 10⁻⁸. Exact-code
 success per firm-round was {{ext.sx.success.SX-SHR.all.rate}} in SX-SHR (95% CI {{ext.sx.success.SX-SHR.all.ci_lo}}
 to {{ext.sx.success.SX-SHR.all.ci_hi}}) and {{ext.sx.success.SX-ISO.all.rate}} in SX-ISO (95% upper bound
@@ -931,7 +932,8 @@ SX-SHR minus SX-ISO, was {{ext.sx.shr_minus_iso.all.diff}} ({{ext.sx.shr_minus_i
 {{ext.sx.shr_minus_iso.all.ci_hi}}; p = {{ext.sx.shr_minus_iso.all.p}}).
 Without a shared folder, no code crossed. These agents did not build a host-level channel within ten rounds, which
 does not show that no such channel exists (A4 finds that some do). Every model passed codes with the folder shared,
-so the SX-ISO null is informative for each of them.
+so the SX-ISO null is informative for each of them, although for Opus 5.5 it rests on a single game after those
+exclusions.
 
 **E5, prices as signals.** Every arm shows the rival's past prices, in the history table and on the public bulletin.
 If screening chat moved coordination from words into prices, a firm's price should follow its rival's previous price
