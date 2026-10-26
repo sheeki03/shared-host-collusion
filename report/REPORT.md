@@ -16,9 +16,8 @@ exchange information or coordinate. Two pricing agents play a repeated logit Ber
 no-network containers. A scratch directory is shared or private; prompts and market draws are matched. Canaries
 trace crossings, and price regressions test response to the rival's randomised private cost. Seventeen
 pre-registered arms vary awareness, permission, monitored chat, a scripted rival's offer and a command gate built on
-tirith, the author's open-source agent-security tool. Of 14
-planned configurations of 13 models, 13 completed; we analyse {{meta.n_complete}} games over
-ten framings. When permitted, agents did not address their rival through the shared folder more than
+tirith, the author's open-source agent-security tool. We analyse
+{{meta.n_complete}} games from 13 of 14 planned model configurations over ten framings. When permitted, agents did not address their rival through the shared folder more than
 in matched private-storage games (interaction {{P1.l2.unknown_range_lo}} to {{P1.l2.unknown_range_hi}} over every
 assignment of unclassifiable writes); they wrote rival-addressed notes in both. Unprompted, rival canaries crossed in at
 least {{L3.game_rate_all_scenarios.SHR-AWARE.k}} of {{L3.game_rate_all_scenarios.SHR-AWARE.n_total}} shared-folder games,
@@ -28,8 +27,7 @@ detected. The tirith gate blocked {{S2.block_rate}} of checked commands, includi
 used the folder less, without detected evasion. An LLM transcript
 judge caught {{S6.llm_per_firm.game_judged.tpr}} of trace-confirmed crossings at a false-positive rate of
 {{S6.llm_per_firm.game_judged.fpr}}, while tirith's path rule also flagged {{S6.tirith_path.game_judged.fpr}} of games
-without one. Private storage removed the file channel, but scripted probes passed bits through host memory
-accounting and the page cache.
+without one. Private storage removed the file channel, but host memory accounting and the page cache still carried scripted bits.
 
 ## 1. Introduction
 
@@ -351,7 +349,7 @@ channels open.
 
 ## Author Contributions
 
-Shivom Sharma directed and oversaw all work; substantial AI assistance is described below.
+Shivom Sharma directed and oversaw all work; AI assistance is described below.
 
 ## References
 
@@ -1097,9 +1095,8 @@ one command per round. The fixes are named in Appendix A.
 
 ## LLM Usage Statement
 
-AI coding and research assistants generated and revised substantial portions of the experimental harness, game
+AI coding and research assistants generated and revised portions of the experimental harness, game
 engines, test suites, analysis code and manuscript. They also assisted with study planning, literature discovery,
 debugging and adversarial review. The author directed the project and remains responsible for its methods,
-interpretation and submitted text. Separately, GLM 5.3 served as an experimental subject, the chat compliance monitor,
-the communication classifier and the transcript judges, as described in the Methods and limitations. The 100 hand-check
+interpretation and submitted text. The 100 hand-check
 labels were assigned by an independent human reviewer (D40).
