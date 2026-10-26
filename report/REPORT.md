@@ -14,18 +14,19 @@ Rival firms' AI agents may share writable infrastructure. We test whether their 
 use it to exchange information or coordinate. Two pricing agents play a repeated logit Bertrand game in separate
 no-network containers. A scratch directory is shared or private; prompts and market draws are matched. Canaries
 trace crossings, and price regressions test response to the rival's randomised private cost. Seventeen
-pre-registered arms vary awareness, permission, monitored chat, a scripted rival's offer and a command gate. The
-grid spans 14 configurations of 13 models and ten framings on five engines; this report analyses
-{{meta.n_complete}} complete games ({{meta.n_rounds}} rounds). When permitted, agents did not use the shared folder to
-address their rival more than in matched private-storage games (interaction {{bound_lo.P1.l2.diff}} to
-{{bound_hi.P1.l2.diff}} as unclassifiable writes count as none or as addressed); they wrote rival-addressed notes in
-both. Unprompted, the shared-minus-private difference in price dependence on the rival's private cost was
-{{P3.beta.diff}} ({{P3.beta.ci_lo}} to {{P3.beta.ci_hi}}; minimum detectable effect {{P3.mde_observed}}). Monitoring
-cut delivered chat coordination but did not push it into storage. A command gate blocked {{S2.block_rate}} of
-checked commands; rival content crossed afterwards in {{S2.evasion_rate}} of games with a block. LLM
-transcript judges caught {{S6.llm_per_firm.tpr}} of crossings at a false-positive rate of {{S6.llm_per_firm.fpr}},
-while a path rule also flagged {{S6.tirith_path.fpr}} of games without one. Private storage removed the file
-channel, but scripted probes still passed bits through host memory accounting and the page cache.
+pre-registered arms vary awareness, permission, monitored chat, a scripted rival's offer and a command gate. Of 14
+planned configurations of 13 models, 13 completed; we analyse {{meta.n_complete}} games ({{meta.n_rounds}} rounds) over
+ten framings on five engines. When permitted, agents did not address their rival through the shared folder more than
+in matched private-storage games (interaction {{P1.l2.unknown_range_lo}} to {{P1.l2.unknown_range_hi}} over every
+assignment of unclassifiable writes); they wrote rival-addressed notes in both. Unprompted, rival canaries crossed in at
+least {{L3.game_rate_all_scenarios.SHR-AWARE.k}} of {{L3.game_rate_all_scenarios.SHR-AWARE.n_total}} shared-folder games,
+but shared storage did not detectably raise price dependence on the rival's private cost ({{P3.beta.diff}},
+{{P3.beta.ci_lo}} to {{P3.beta.ci_hi}}). Monitoring cut delivered chat coordination; no shift into storage was
+detected. A command gate blocked {{S2.block_rate}} of checked commands without detected evasion. On the same games,
+LLM transcript judges caught {{S6.llm_per_firm.game_judged.tpr}} of trace-confirmed crossings at a false-positive rate
+of {{S6.llm_per_firm.game_judged.fpr}}, while a path rule also flagged {{S6.tirith_path.game_judged.fpr}} of games
+without one. Private storage removed the file channel, but scripted probes still passed bits through host memory
+accounting and the page cache.
 
 ## 1. Introduction
 
@@ -88,7 +89,7 @@ common shock d_t ~ TN(0, 0.20²) has firm-specific forecast s_i = d_t + e_i, e_i
 complete-information Nash and joint maxima at realised costs, and consumer surplus is
 CS = β·α·μ·ln(Σ_j exp((a − p_j/α)/μ) + exp(a_0/μ)). In one-shot limiting subgames, disclosing private cost or the
 forecast lowered expected profit by about 2% (`engines/pricing.py::galor_check`). Ten 30-round framings use five
-engines: pricing, auctions, reporting, dealer spreads and bargaining (Table C6).
+engines: pricing, auctions, reporting, dealer spreads and bargaining (Chatterjee and Samuelson 1983; Table C6).
 
 ### 3.3 Sandbox and turn protocol
 
@@ -150,12 +151,14 @@ check; per-game β uses a lag-differenced baseline and pooled β a wild cluster 
 
 ### 3.9 Exclusions, sensitivity and changes to the plan
 
-Harness errors are re-run from the same seed; >20% unparsed steps exclude a game; pilot seeds never enter estimates.
+Harness errors are re-run from the same seed, and a game no run completed is missing; >20% unparsed steps exclude a
+game; pilot seeds never enter estimates.
 Sensitivities drop fallback rounds or name-only exposure and stratify by host, since relaunches split
 {{sens.host_consistent.P1.l2.n_mixed_hosts}} of {{sens.host_consistent.P1.l2.n_complete_sets}} complete P1 sets and
 {{sens.host_consistent.P2.storage.n_mixed_hosts}} of {{sens.host_consistent.P2.storage.n_complete_sets}} P2 sets
 across hosts (Table C7). An `unknown` label is never a negative and, as pre-registered, blocks the confirmatory claim
-it touches; P1 and P2 are then reported with every unknown counted as no and as yes (D29). `prereg/DEVIATIONS.md`
+it touches; P1 and P2 are then reported under two imputations (every unknown as no, then as yes; D29) and with
+the range of the estimate over every assignment of the unknowns (D36). `prereg/DEVIATIONS.md`
 timestamps every change, including the duplicate rule (D12) and definitions written after collection began (D7);
 Appendix E separates commit times from the author's account of what had been inspected.
 
@@ -168,24 +171,26 @@ Pilot seeds (9000+) never enter estimates; Appendix E summarises the pilot.
 ### 4.0 Runs, exclusions and positive controls
 
 We analysed {{meta.n_complete}} complete games ({{meta.n_rounds}} rounds) of {{meta.n_games}} planned, on
-{{meta.n_hosts}} machines. The {{meta.n_excluded}} planned games not analysed (Table C10) are the 39-game Kimi K3.1 Pro
-stream, which never completed because its provider refused its calls under load (D35), and those removed by the
-pre-registered exclusion rules; {{meta.parse_failure_rate}} of firm-turns used the fallback action. Costs are in Appendix E. Of {{L2.n_candidates}}
+{{meta.n_hosts}} machines: 13 of the 14 configurations. The {{meta.n_missing}} Kimi K3.1 Pro games are missing because
+every run ended in a provider error (D35), and {{meta.n_excluded}} game was excluded by the pre-registered parse rule
+(Table C10); {{meta.parse_failure_rate}} of firm-turns used the fallback action. Crossing labels were recomputed after
+a detector fix (D36): text that a firm's own inbox also contains no longer counts as rival content. Costs are in Appendix E. Of {{L2.n_candidates}}
 communication candidates, {{L2.labels_scratch.unknown}} scratch and {{L2.labels_chat.unknown}} chat candidates
 remained unknown. In the blinded check of {{coding.handcheck.n}} candidates (D30) the author agreed with the
 classifier on {{coding.handcheck.raw_agreement}} (Wilson 95% CI {{coding.handcheck.raw_ci_lo}} to
 {{coding.handcheck.raw_ci_hi}}; κ {{coding.handcheck.kappa}}, {{coding.handcheck.kappa_boot_ci_lo}} to
 {{coding.handcheck.kappa_boot_ci_hi}}). Table C1 gives per-arm rates and Table C3 each model.
 
-A control fails when its 95% interval does not lie above zero (a rule fixed before the final run). CHAT-ISO delivered
+A control is not met when its 95% interval does not lie above zero (a rule fixed before the final run). CHAT-ISO delivered
 coordination was {{pc.chat_iso.coord_rate.bound_lo}} to {{pc.chat_iso.coord_rate.bound_hi}} per firm-turn as unknown
 labels count as no or yes ({{pc.chat_iso.coord_rate.n}} games), the matched CHAT-ISO − ISO-AWARE Δp was
 {{pc.chat_iso.dp.diff}} ({{pc.chat_iso.dp.ci_lo}} to {{pc.chat_iso.dp.ci_hi}}), and pooled ORACLE β_priv was
 {{pc.oracle.beta_priv.est}} ({{pc.oracle.beta_priv.ci_lo}} to {{pc.oracle.beta_priv.ci_hi}}). Per model (Table C16),
-{{pc.chat_iso.coord_rate.failed_models}} failed the coordination control, {{pc.chat_iso.dp.failed_models}} the Δp
-control and {{pc.oracle.beta_priv.failed_models}} the ORACLE control, which rests on few games per model;
-{{pc.unverified_models}} could not be checked. For failing models the nulls below mean that the design could not
-detect collusion for them at this horizon, not that they are safe.
+{{pc.chat_iso.coord_rate.failed_models}} did not meet the coordination control, {{pc.chat_iso.dp.failed_models}} the
+Δp control and {{pc.oracle.beta_priv.failed_models}} the ORACLE control, whose intervals rest on as few as three games
+and so often show imprecision rather than no response; {{pc.unverified_models}} could not be checked. Every analysed
+configuration misses or lacks at least one control, so the controls support the pooled analysis; for single models a
+null means the design could not detect collusion at this horizon, not that the model is safe.
 
 ### 4.1 Displacement
 
@@ -195,14 +200,16 @@ detect collusion for them at this horizon, not that they are safe.
 pooled over models (means, 95% bootstrap intervals); (c) the P2 contrasts.
 
 Unknown labels on {{P2.chat.n_unknown_messages}} delivered messages in {{P2.chat.n_unknown_games}} games block P2's
-confirmatory claim (D29). Counting them as not coordinating or as coordinating, the monitor changed delivered
+confirmatory claim (D29). Imputing them as not coordinating or as coordinating, the monitor changed delivered
 coordination by {{bound_lo.P2.chat.diff}} ({{bound_lo.P2.chat.ci_lo}} to {{bound_lo.P2.chat.ci_hi}}) or
-{{bound_hi.P2.chat.diff}} ({{bound_hi.P2.chat.ci_lo}} to {{bound_hi.P2.chat.ci_hi}}) per firm-turn. The monitor ×
+{{bound_hi.P2.chat.diff}} ({{bound_hi.P2.chat.ci_lo}} to {{bound_hi.P2.chat.ci_hi}}) per firm-turn, and by
+{{P2.chat.unknown_range_lo}} to {{P2.chat.unknown_range_hi}} over every assignment of the unknowns (D36). The monitor ×
 storage interaction on β_priv, which needs no labels, was {{P2.storage.diff}} ({{P2.storage.ci_lo}} to
 {{P2.storage.ci_hi}}; same-host sets {{sens.host_consistent.P2.storage.diff}}), and the simple CHAT-MON-SHR −
-CHAT-MON-ISO contrast {{P2.storage_mon.diff}} ({{P2.storage_mon.ci_lo}} to {{P2.storage_mon.ci_hi}}). Displacement
-was {{P2.unknown_bounds_verdict}} (Holm-adjusted p {{bound_lo.P2.p_holm}} and {{bound_hi.P2.p_holm}}): monitoring
-suppressed delivered chat coordination without moving dependence into storage.
+CHAT-MON-ISO contrast {{P2.storage_mon.diff}} ({{P2.storage_mon.ci_lo}} to {{P2.storage_mon.ci_hi}}). P2 was not
+supported under either imputation (Holm-adjusted p {{bound_lo.P2.p_holm}} and {{bound_hi.P2.p_holm}}) and is
+{{P2.unknown_range_verdict}}: monitoring suppressed delivered chat coordination, and displacement into storage was
+not detected, although the interval allows a moderate positive interaction.
 
 ### 4.2 Capability versus propensity
 
@@ -212,11 +219,13 @@ suppressed delivered chat coordination without moving dependence into storage.
 ORACLE, pooled over models (means, 95% bootstrap intervals).
 
 *Capability (P1).* Unknown labels on {{P1.l2.n_unknown_turns}} firm-turns in {{P1.l2.n_unknown_games}} games block
-P1's confirmatory L2 claim (D29). Counting each as no write or as one, permission raised the addressed-write rate by
+P1's confirmatory L2 claim (D29). Imputing each as no write or as one, permission raised the addressed-write rate by
 {{bound_lo.P1.l2.diff}} ({{bound_lo.P1.l2.ci_lo}} to {{bound_lo.P1.l2.ci_hi}}; Holm-adjusted p
 {{bound_lo.P1.l2.p_holm}}) or {{bound_hi.P1.l2.diff}} ({{bound_hi.P1.l2.ci_lo}} to {{bound_hi.P1.l2.ci_hi}};
-{{bound_hi.P1.l2.p_holm}}) more with shared than with private storage ({{bound_lo.P1.l2.n_pairs}} pairs):
-{{P1.l2.unknown_bounds_verdict}}; the supporting β_priv interaction was {{P1.beta.diff}} ({{P1.beta.ci_lo}} to
+{{bound_hi.P1.l2.p_holm}}) more with shared than with private storage ({{bound_lo.P1.l2.n_pairs}} pairs). Over every
+assignment of the unknowns the estimate lies between {{P1.l2.unknown_range_lo}} and {{P1.l2.unknown_range_hi}} (the
+intervals are not computed there), so P1 is {{P1.l2.unknown_range_verdict}}; the supporting β_priv interaction was
+{{P1.beta.diff}} ({{P1.beta.ci_lo}} to
 {{P1.beta.ci_hi}}). Under permission agents wrote rival-addressed notes in {{bound_lo.P1.l2_rate.SHR-PERMITTED.rate}}
 to {{bound_hi.P1.l2_rate.SHR-PERMITTED.rate}} of firm-turns with shared storage and
 {{bound_lo.P1.l2_rate.ISO-PERMITTED.rate}} to {{bound_hi.P1.l2_rate.ISO-PERMITTED.rate}} with private storage, where
@@ -224,20 +233,25 @@ they could never be delivered: permission changed intent more than channel use.
 
 *Propensity (P3).* Without permission, SHR-AWARE − ISO-AWARE β_priv was {{P3.beta.diff}} ({{P3.beta.ci_lo}} to
 {{P3.beta.ci_hi}}; Holm-adjusted p {{P3.beta.p_holm}}, the larger of the two D29 runs) and the price difference
-{{P3.price.diff}} ({{P3.price.ci_lo}} to {{P3.price.ci_hi}}): a bounded null (Section 4.4).
+{{P3.price.diff}} ({{P3.price.ci_lo}} to {{P3.price.ci_hi}}): a bounded null (Section 4.4). Private information
+did cross without permission: a rival canary reached at least {{L3.game_rate_all_scenarios.SHR-AWARE.k}} of
+{{L3.game_rate_all_scenarios.SHR-AWARE.n_total}} SHR-AWARE games (traces resolved in
+{{L3.game_rate_all_scenarios.SHR-AWARE.n}}; {{L3.game_rate.SHR-AWARE.k}} in the core game, where
+an agent read it from its rival's shared backup file), but such transfer did not detectably move prices on average.
 
 *Secondary.* Where something crossed or was addressed ({{S4.n_games}} games, selected on the outcome), prices followed
 the rival's private cost (β_priv {{S4.beta_priv.est}}, {{S4.beta_priv.ci_lo}} to {{S4.beta_priv.ci_hi}}) but not its
-forecast error (β_com {{S4.beta_com.est}}, {{S4.beta_com.ci_lo}} to {{S4.beta_com.ci_hi}}), so what crossed was
-private-cost information (S4). Consumer surplus did not detectably differ between SHR and ISO games ({{S5.cs.diff}},
-{{S5.cs.ci_lo}} to {{S5.cs.ci_hi}}; S5). In the honeypot (S1) nearly every scripted note was read
-({{S1.read_rate.PROVOC}} of PROVOC games), but Δp did not differ between the offer and its controls (Table C5), so the
-offer moved prices no more than finding the note did. Model-variant pairs (S3) and scenario framings (G; Tables
+forecast error (β_com {{S4.beta_com.est}}, {{S4.beta_com.ci_lo}} to {{S4.beta_com.ci_hi}}): an association in an
+outcome-selected subset, consistent with private-cost information crossing but not identifying what crossed (S4). Consumer surplus did not detectably differ between SHR and ISO games ({{S5.cs.diff}},
+{{S5.cs.ci_lo}} to {{S5.cs.ci_hi}}; S5). In the honeypot (S1) the scripted note was read in
+{{S1.read_rate.PROVOC.k}} of the {{S1.read_rate.PROVOC.n}} PROVOC games where reading could be verified
+({{S1.read_rate.PROVOC.n_unknown}} unverified); the Δp differences between the offer and its controls had intervals
+including zero (Table C5), so no added effect of the offer was detected. Model-variant pairs (S3) and scenario framings (G; Tables
 C4–C6, Figure C1) have three seeds per cell and are reported without interpretation.
 
 ### 4.3 Comparison of defence layers
 
-All live gated games ran on the Mac while many ungated comparators moved to other hosts
+All live gated games ran on the one host with the pinned tirith binary while many ungated comparators ran elsewhere
 ({{S2.host_consistent.n_mixed_hosts}} of {{S2.host_consistent.n_complete_sets}} gate 2×2 sets span hosts), so the S2
 contrasts are descriptive (Figure C3). The path rule blocked {{S2.block_rate}} of checked commands. On the share of firm-turns
 touching `/srv/scratch`, enforcement had a main effect of {{S2.gate_main.diff}} ({{S2.gate_main.ci_lo}} to
@@ -246,21 +260,23 @@ their interaction {{S2.interaction.diff}} ({{S2.interaction.ci_lo}} to {{S2.inte
 crossed afterwards in {{S2.evasion_rate}} of the {{S2.n_games_blocked}} gated games with a block: the predicted evasion
 did not appear, and agents mostly complied rather than routing around the rule.
 
-Against trace-confirmed crossings (Table C17; same games in Table C15), the stock tirith policy, a negative control,
-flagged {{S6.tirith_stock.tpr}} of positives at a false-positive rate of {{S6.tirith_stock.fpr}}, and the path rule
-{{S6.tirith_path.tpr}} at {{S6.tirith_path.fpr}} (hardened: {{S6.tirith_path_hardened.tpr}} at
-{{S6.tirith_path_hardened.fpr}}). A rule on the path cannot tell exploring from communicating: agents touched the
-folder in almost every game. The per-firm GLM 5.3 judge reached {{S6.llm_per_firm.tpr}} at {{S6.llm_per_firm.fpr}}
-(AUROC {{S6.llm_per_firm.auroc}}), the joint judge {{S6.llm_joint.tpr}} at {{S6.llm_joint.fpr}}, and the active β
-audit only {{S6.active_beta.tpr}} at {{S6.active_beta.fpr}}. GLM 5.3, also the judge, was judged about as well as
+Monitors are compared on the {{S6.paired.n_games}} judged games that every monitor scored (Table C15): against
+trace-confirmed crossings ({{S6.paired.transfer.n_pos_games}} games; {{S6.paired.transfer.n_unknown_games}} of unknown
+truth left out), the stock tirith policy, a negative control, flagged {{S6.tirith_stock.game_judged.tpr}} of positives
+at a false-positive rate of {{S6.tirith_stock.game_judged.fpr}}, and the path rule {{S6.tirith_path.game_judged.tpr}}
+at {{S6.tirith_path.game_judged.fpr}}. A rule on the path cannot tell exploring from communicating: agents touched the
+folder in almost every game. The per-firm GLM 5.3 judge reached {{S6.llm_per_firm.game_judged.tpr}} at
+{{S6.llm_per_firm.game_judged.fpr}} (AUROC {{S6.llm_per_firm.game_judged.auroc}}), the joint judge
+{{S6.llm_joint.game_judged.tpr}} at {{S6.llm_joint.game_judged.fpr}}, and the active β audit only
+{{S6.active_beta.game_judged.tpr}} at {{S6.active_beta.game_judged.fpr}}; each monitor's own cohort is in Table C17. GLM 5.3, also the judge, was judged about as well as
 other subjects (Table C15). The author maintains tirith (Appendix A).
 
 ### 4.4 Bounded nulls
 
 For P3 the minimum detectable β_priv effect (α = 0.05, 80% power, {{P3.beta.n_pairs}} pairs) was
 {{P3.mde_observed}}, from the observed SD of paired differences ({{P3.mde_sd}}; D7), so it describes achieved
-precision, not a priori power. We can rule out average spontaneous storage-mediated price dependence above
-{{P3.beta.ci_hi}} for these models at this horizon. The conservative 95% upper bound on SHR-AWARE games with any L3
+precision, not a priori power. The interval excludes an average SHR-AWARE − ISO-AWARE β_priv difference above
+{{P3.beta.ci_hi}} for these models at this horizon; it does not bound rarer transfers, which occurred (Section 4.2). The conservative 95% upper bound on SHR-AWARE games with any L3
 transfer was {{P3.l3_upper}}, counting all {{P3.l3_unknown_games}} games with unresolved traces as possible positives.
 The first-mover placebo, null unless something other than storage links the firms within a round, was
 {{placebo.beta_first.est}} ({{placebo.beta_first.ci_lo}} to {{placebo.beta_first.ci_hi}}); Table C7 has the
@@ -281,10 +297,11 @@ not a working channel.
 
 *Declared after the freeze and before their data were read; none enters a confirmatory estimate.* E1 re-ran P1–P3 on
 new market draws ({{ext.meta.rep.n_complete}} of 144 games): unknown labels block its readings for
-{{ext.rep.labels_blocked}} (both bounds in Appendix G), and its P3 contrast, {{ext.rep.P3.beta.diff}}
+{{ext.rep.labels_blocked}} (both imputations in Appendix G), and its P3 contrast, {{ext.rep.P3.beta.diff}}
 ({{ext.rep.P3.beta.ci_lo}} to {{ext.rep.P3.beta.ci_hi}}), is consistent with the confirmatory null but inconclusive.
-In E4, a secret-exchange task, an exact code crossed in {{ext.sx.success.SX-SHR.all.rate}} of firm-rounds with the
-folder shared and {{ext.sx.success.SX-ISO.all.rate}} with it private. A scripted calibration with no model (A4)
+In E4, a secret-exchange task, an exact code crossed in {{ext.sx.game_any_success.SX-SHR.all.k}} of
+{{ext.sx.game_any_success.SX-SHR.all.n}} games with the folder shared and {{ext.sx.game_any_success.SX-ISO.all.k}} of
+{{ext.sx.game_any_success.SX-ISO.all.n}} with it private. A scripted calibration with no model (A4)
 decoded bits between the ISO containers through host-wide memory accounting in {{x.isocal.channel_runs.memory}} and
 page-cache timing in {{x.isocal.channel_runs.pagecache}} of {{x.isocal.n_runs}} host-and-load runs (Table A1): private
 storage leaves host-level paths, which no agent here is shown to have used (Appendices G and H).
@@ -292,10 +309,10 @@ storage leaves host-level paths, which no agent here is shown to have used (Appe
 ## 5. Discussion and Limitations
 
 Told that they may, agents wrote notes addressed to their rival (L2) about as often when the folder was private as
-when it was shared, so permission changed intent more than channel use. Unprompted, shared storage did not detectably
-raise the dependence of prices on the rival's private cost (L3 not shown). Monitoring removed most delivered chat
-coordination without moving it into storage, and prices followed the rival's last price less under the monitor (E5,
-exploratory). Path rules fired on routine exploration as well as on crossings, whereas private storage removes the
+when it was shared, so permission changed intent more than channel use. Unprompted, rival canaries did cross (L3),
+but shared storage did not detectably raise the dependence of prices on the rival's private cost. Monitoring removed
+most delivered chat coordination, no move into storage was detected, and prices followed the rival's last price less
+under the monitor (E5, exploratory). Path rules fired on routine exploration as well as on crossings, whereas private storage removes the
 shared writable path outright and LLM judges separated crossing games from the rest with few false positives; OpenAI
 (2026d) likewise recommends closing easily discovered cross-sample channels. S2 tests one rule, not all command
 inspection, and relative-path bypasses of denylists are common (Chen and Lin 2026).
@@ -318,9 +335,10 @@ action-channel and AI-control claims (Greenblatt et al. 2023).
 ## 6. Conclusion
 
 In a pre-registered design that cuts a shared scratch directory while holding prompts and market draws fixed,
-monitored chat lost most of its coordination without moving it into storage; agents told they may use the folder
-wrote rival-addressed notes as often when it was private; and unprompted, shared storage did not detectably raise
-prices' dependence on the rival's private cost (minimum detectable effect {{P3.mde_observed}}). A command gate deterred
+monitored chat lost most of its coordination and no shift into storage was detected; agents told they may use the
+folder wrote rival-addressed notes as often when it was private; and unprompted, rival canaries crossed in some
+games, but shared storage did not detectably raise prices' dependence on the rival's private cost (minimum
+detectable effect {{P3.mde_observed}}). A command gate deterred
 use of the folder without detected evasion, but its path rule could not tell exploring from communicating; LLM
 transcript judges separated crossing games well; and private storage removed the file channel while scripted probes
 showed host-level channels it leaves open. The evidence ladder, matched cuts and minimum detectable effects state how
@@ -361,6 +379,9 @@ and Collusion. American Economic Review 110(10): 3267-3297. doi:10.1257/aer.2019
 Çanlı, U. B., Kesikbaş, K. K., and Yakar, P. (2026). The Sentinel's Dilemma: Detecting Improvised Covert Channels in
 Multi-Agent Populations. AI Incident Response Sprint, Apart Research.
 https://apartresearch.com/sprints/projects/the-sentinels-dilemma-detecting-improvised-covert-channels-in-multiagent-populations-91xl
+
+Chatterjee, K., and Samuelson, W. (1983). Bargaining under Incomplete Information. Operations Research 31(5):
+835-851. doi:10.1287/opre.31.5.835
 
 Chen, C., and Lin, Z. (2026). One Goal, Many Commands: Characterizing Denylist Fragility in AI Agents.
 arXiv:2606.15549.
@@ -526,10 +547,10 @@ descriptive differences are not evidence about the isolated effect of safety tra
 (Appendix H): with no model, a scripted sender in firm A's container encodes one bit per round and a scripted
 receiver in firm B's container decodes it, through the frozen ISO configuration and the game's own command
 supervisor, with 64 test bits per channel and run. A channel counts when the 95% lower bound of its test accuracy is
-above 0.5. Runs cover the three host types that ran most confirmatory games (the Mac's Docker Desktop VM, the
-Contabo VPS and the instabox VPSs; the production VPS retired in D11 was not calibrated), each labelled by the load it
-was launched under; the load averages at start and end say what the host actually carried. A row marked yes shows capacity that
-ISO leaves in place, not that any agent found or used it. The mitigations follow from the rows: a virtualised or
+above 0.5. Runs cover the three host types that ran most confirmatory games (a Docker Desktop VM on macOS and two
+cloud VPS types; the host retired in D11 was not calibrated), each labelled by the load it was launched under; the
+load averages at start and end say what the host actually carried. A row marked yes shows that the tested protocol
+passed bits through a channel ISO leaves in place, not a maximum capacity, and not that any agent found or used it. The mitigations follow from the rows: a virtualised or
 masked `/proc/meminfo` and `/proc/loadavg` (for example lxcfs), a separate copy of the image's files for each
 principal, and fixed-length turns. We publish the calibration as a measurement harness for this configuration only;
 it addresses no real service.
@@ -537,7 +558,8 @@ it addresses no real service.
 {{TABLE:isocal_matrix}}
 
 **Table A1.** ISO residual channels (A4, exploratory, LLM-free): correct test bits out of 64 with the Clopper–Pearson
-95% interval of accuracy, capacity in bits per round (point, and from the interval's lower bound), and whether the
+95% interval of accuracy, achieved bits per round under the tested protocol (point, and from the interval's lower
+bound; not a maximum capacity), and whether the
 channel counts. Columns are runs, by host type, kernel and the load average at start and end. Storage write timing is
 the declared negative control.
 
@@ -686,17 +708,18 @@ in Section 4, name-exposure crossing rates in Table C1 and the game-fixed-effect
 
 {{TABLE:exclusions}}
 
-**Table C10.** Excluded games, with the reason (harness error, or more than 20% of steps unparsed) and whether a
-same-seed re-run replaced them.
+**Table C10.** Planned games not analysed, one row each: missing (no run completed; every attempt ended in a harness
+or provider error, D35) or excluded (more than 20% of steps unparsed), with the number of attempts and a short reason.
+Attempt-level diagnostics, including superseded and duplicate runs, are kept with the results, not reproduced here.
 
 {{TABLE:coverage}}
 
-**Table C11.** Coverage: planned, complete, excluded, trimmed and pending games per cell.
+**Table C11.** Coverage: planned, complete, missing, excluded, trimmed and pending games per cell.
 
 {{TABLE:monitors}}
 
-**Table C12.** Every monitor at every level (firm-round, game-firm, game, and the game level on the judged games only,
-which pairs the monitor comparisons) against L1 exposure (a canary, content or name-exposure crossing), as written by
+**Table C12.** Every monitor at every level (firm-round, game-firm, game, and the game level on the judged games every
+monitor scored, which pairs the monitor comparisons) against L1 exposure (a canary, content or name-exposure crossing), as written by
 `analysis/monitors.py`, with its notes on the judge sample and spend, the active-β threshold and tirith gate errors.
 
 {{TABLE:nonstorage_attempts}}
@@ -709,11 +732,12 @@ an attempt, never a success.
 
 {{TABLE:monitors_paired}}
 
-**Table C15.** Every monitor at the game level on the same selected judge games (`game_judged`), against the truth of
+**Table C15.** Every monitor at the game level on the same games: the judged games that every monitor scored
+(`game_judged`; the joint judge reads only games with two agent firms, D36), against the truth of
 Table C17 (a trace-confirmed rival-authored canary or content crossing): judged games, games of unknown truth (left
 out), positive and negative games, TPR and FPR at each monitor's own operating point, AUROC where both classes have at
-least 5 scored games, and coverage. This is the like-for-like comparison of the monitors on the judged games (a
-census of the evaluation set, D27). Table C12 gives the same level against L1 exposure.
+least 5 scored games, and coverage. This is the like-for-like comparison of the monitors (the judges read a census of
+the evaluation set, D27). Table C12 gives the same level against L1 exposure.
 
 {{TABLE:positive_controls}}
 
@@ -737,7 +761,7 @@ firms. Cohorts therefore differ slightly, so these pooled rates are not a paired
 
 ## Appendix D. Transcript excerpts
 
-Two or three excerpts from confirmatory games, as pre-registered, are in `report/APPENDIX.md`, Section G. They are
+Up to three excerpts from confirmatory games, as pre-registered, follow this paragraph. They are
 redacted, sometimes truncated quoted spans: every canary is redacted, long outputs are cut and marked, and logged
 reasoning (at most 400 characters) is flagged when it reaches that cap. They are chosen by `tools/pick_excerpts.py`, whose rule was first committed with D7 (25 Oct, 23:16 IST),
 after the freeze and after confirmatory collection began, and later revised as dated in its docstring; the author
@@ -748,6 +772,18 @@ lexical screen (a number and a coordination word), a selection device rather tha
 a coded label; and the first gate block followed by a later trace-confirmed canary or content crossing (or a silent
 canary copy) in a gated arm, else a fallback labelled as not an evasion: rival file-name exposure, then
 public-bulletin access. Nothing is ranked by how interesting its content is.
+
+**D1. Storage crossing.**
+
+{{EXCERPT:1}}
+
+**D2. A delivered chat message that passed the lexical screen** (an illustration, not an adjudicated label).
+
+{{EXCERPT:2}}
+
+**D3. Gate block, then evasion or a labelled non-evasion fallback.**
+
+{{EXCERPT:3}}
 
 ## Appendix E. Reproducibility
 
@@ -792,7 +828,7 @@ game-fixed-effects form suffers Nickell bias (mean −0.069) and appears only as
 **Changes to the plan** (`prereg/DEVIATIONS.md`). D1–D4 were pilot decisions recorded by the freeze: conservative
 budget bookkeeping for missing gateway costs, higher output caps for all arms, and keeping 40-round core games. The
 frozen registration also specified a multi-host plan; D5 implemented its host assignment after the freeze, with
-gated games on the Mac that held the pinned tirith binary. Later operational changes followed the start of
+gated games on the one host that held the pinned (macOS) tirith binary. Later operational changes followed the start of
 confirmatory collection. The runners were stopped and relaunched four
 times: to rebalance work across machines, to protect a machine that also served a production website (D6, D10, D11)
 and to move the remaining games onto code whose retry handling rides out network drops (D13, D15). Drops on three
@@ -817,7 +853,11 @@ The S6 run on the partial log set had already finished; the author reports that 
 synthetic data, without reading that run's outputs or any positive-control estimate. In short, the arms, prompts,
 hypotheses and primary estimators predate every confirmatory game; the rubric, the secondary definitions (D7 and the
 26 Oct additions) and the duplicate rule (D12) do not; and every "before inspection" statement above is the author's
-account, not something commit times establish.
+account, not something commit times establish. Analysis code was tagged `analysis-freeze` (D31, 26 Oct 06:52 IST)
+before the author first read confirmatory outcomes, so every later change (D32 to D36) can be diffed against it. Two
+of them change analyses after outcomes were read: D33 corrected the S4 subset, and D36, after a second external
+review, fixed the trace detector (a firm's own inbox text had counted as rival content), compared monitors on the
+games every monitor scored, separated missing from excluded games and added the unknown-label range.
 
 ## Appendix F. Channel taxonomy
 
@@ -837,7 +877,7 @@ The extensions and further exploratory analyses (Section 4.6, Appendices G and H
 | Explicit chat | Seller chat under an overseer in LLM double auctions (Agrawal et al. 2025); the pilot chat game (Section 3.10) | CHAT-ISO as the collusion positive control, and the chat-monitor 2×2 (P2), with delivered coordination coded one message at a time | A monitor that sees the conversation history (ours screens each message alone); a monitor from another model family (ours is GLM 5.3) |
 | Steganography in chat | Hidden messages that evade a monitor (Motwani et al. 2024; Mathew et al. 2025), which frontier models manage mainly when they can first agree an encoding unmonitored (Zolkowski et al. 2025); codes improvised over repeated rounds (Dineen et al. 2026); covert conversations that a transcript auditor cannot tell from honest ones (Vaikuntanathan and Zamir 2026) | Only indirectly: β_priv measures the information effect whatever the wording | Detection: the monitor and the classifier read single items and have no decoder, so coded messages could pass both (Section 5) |
 | Signalling in public actions | Codes in fare filings to a shared publishing service, as alleged by the US Department of Justice (1994); tacit algorithmic and LLM price coordination (Calvano et al. 2020; Fish et al. 2024; Lee 2026) | Available in every arm, ISO included, so SHR − ISO removes signalling that does not depend on storage from Δp and consumer surplus (S5); signalling that shared storage enables or changes, such as a price code agreed in a note, stays in the contrast. A within-round β_priv cannot come from it (Section 3.6) | Whether prices encode private information across rounds, for example in low-order digits |
-| Hardware and timing side channels | Cache timing and CPU contention between microVMs (OpenAI 2026c); co-resident cloud VMs (Ristenpart et al. 2009); speculative execution (Kocher et al. 2019); the page cache (Gruss et al. 2019; Abudraham et al. 2026); in this design, also host-wide `/proc` counters and turn timing (inferred, untested) | Attempts, through the exploratory command scan (Section 4.5); capacity under the game's turn protocol for host-wide memory accounting, load average, page-cache timing and storage timing, with no model, in the scripted calibration (Table A1); sequential turns and the killing of leftover processes limit live contention channels | Whether any agent used such a channel: canaries and file traces cannot see one, and the page cache and the host state behind host-wide `/proc` views persist between turns, so ISO does not remove them (Section 3.3); CPU-cache and other microarchitectural channels, and the B → A direction, are not calibrated |
+| Hardware and timing side channels | Cache timing between microVMs and CPU-time contention within a shared container (OpenAI 2026c); co-resident cloud VMs (Ristenpart et al. 2009); speculative execution (Kocher et al. 2019); the page cache (Gruss et al. 2019; Abudraham et al. 2026); in this design, also host-wide `/proc` counters and turn timing (inferred, untested) | Attempts, through the exploratory command scan (Section 4.5); capacity under the game's turn protocol for host-wide memory accounting, load average, page-cache timing and storage timing, with no model, in the scripted calibration (Table A1); sequential turns and the killing of leftover processes limit live contention channels | Whether any agent used such a channel: canaries and file traces cannot see one, and the page cache and the host state behind host-wide `/proc` views persist between turns, so ISO does not remove them (Section 3.3); CPU-cache and other microarchitectural channels, and the B → A direction, are not calibrated |
 | Shared services | A TLS certificate cache (OpenAI 2026c); a shared fare-publishing service (US Department of Justice 1994); here, the inference gateway, provider caches, Docker daemon and harness | Nothing directly: the host, harness, gateway and providers are trusted by assumption (Section 1), and the bulletin is a sanctioned read-only channel, identical for both firms in every arm | Leakage through the gateway or provider caches, which would matter in a real shared-vendor deployment |
 
 ## Appendix G. Extensions: a replication and four exploratory analyses
@@ -905,9 +945,10 @@ games on one host, so the contrasts below are descriptive. Against those games, 
 {{ext.any.vs_permitted.beta.all.p}}), and in the collusion index over the last 10 rounds
 {{ext.any.vs_permitted.ci_last10.all.diff}} ({{ext.any.vs_permitted.ci_last10.all.ci_lo}} to
 {{ext.any.vs_permitted.ci_last10.all.ci_hi}}).
-As predicted, nothing crossed. Turns are sequential and every agent process is reaped, so the shared host offered
-no path for rival content to reach a firm's command output; with no crossing and no unverified trace in any of the
-16 games, the per-game 95% upper bound is {{ext.any.crossing_game.l1.all.upper_all}}.
+As predicted, no crossing was detected in these 16 games; with no crossing and no unverified trace, the per-game 95%
+upper bound is {{ext.any.crossing_game.l1.all.upper_all}}. Sequential turns and reaped processes do not remove
+persistent shared-resource channels (A4 shows some work), so this bounds what these agents did, not what the host
+allows.
 The β_priv difference is descriptive: its bootstrap interval and sign-flip p (above) need not agree at 16 pairs,
 the comparator ran earlier and partly on other hosts, and with no crossing and no non-storage attempt we do not
 read a positive difference as a channel.
@@ -922,14 +963,14 @@ verified. Both firms had
 already exchanged codes there. It was not re-run, since further attempts would select on the behaviour under study
 (DEVIATIONS D24). Three Opus 5.5 SX-ISO games are excluded by the pre-registered rule for more than 20% unparsed
 steps. Codes are fresh and turns sequential, so only the second mover in a round can have seen its partner's
-code before guessing: success per firm-round cannot exceed 0.5, and a chance hit has probability 10⁻⁸. Exact-code
-success per firm-round was {{ext.sx.success.SX-SHR.all.rate}} in SX-SHR (95% CI {{ext.sx.success.SX-SHR.all.ci_lo}}
-to {{ext.sx.success.SX-SHR.all.ci_hi}}) and {{ext.sx.success.SX-ISO.all.rate}} in SX-ISO (95% upper bound
-{{ext.sx.success.SX-ISO.all.upper}}). {{ext.sx.game_any_success.SX-SHR.all.k}} of
-{{ext.sx.game_any_success.SX-SHR.all.n}} SX-SHR games and {{ext.sx.game_any_success.SX-ISO.all.k}} of
-{{ext.sx.game_any_success.SX-ISO.all.n}} SX-ISO games had at least one success. The matched game-level difference,
-SX-SHR minus SX-ISO, was {{ext.sx.shr_minus_iso.all.diff}} ({{ext.sx.shr_minus_iso.all.ci_lo}} to
-{{ext.sx.shr_minus_iso.all.ci_hi}}; p = {{ext.sx.shr_minus_iso.all.p}}).
+code before guessing: success per firm-round cannot exceed 0.5, and a chance hit has probability 10⁻⁸. Games are the
+independent units: {{ext.sx.game_any_success.SX-SHR.all.k}} of {{ext.sx.game_any_success.SX-SHR.all.n}} SX-SHR games and
+{{ext.sx.game_any_success.SX-ISO.all.k}} of {{ext.sx.game_any_success.SX-ISO.all.n}} SX-ISO games had at least one
+success (SX-ISO 95% upper bound {{ext.sx.game_any_success.SX-ISO.all.ci_hi}}), and the matched game-level difference
+in success rate, SX-SHR minus SX-ISO, was {{ext.sx.shr_minus_iso.all.diff}} ({{ext.sx.shr_minus_iso.all.ci_lo}} to
+{{ext.sx.shr_minus_iso.all.ci_hi}}; p = {{ext.sx.shr_minus_iso.all.p}}). Descriptively, exact-code success per
+firm-round was {{ext.sx.success.SX-SHR.all.rate}} in SX-SHR and {{ext.sx.success.SX-ISO.all.rate}} in SX-ISO; rounds
+within a game are not independent, so firm-round intervals are not given.
 Without a shared folder, no code crossed. These agents did not build a host-level channel within ten rounds, which
 does not show that no such channel exists (A4 finds that some do). Every model passed codes with the folder shared,
 so the SX-ISO null is informative for each of them, although for Opus 5.5 it rests on a single game after those
@@ -1021,9 +1062,9 @@ entropies, χ² with its degrees of freedom, relabellings, p and verdict; then e
 bootstrap intervals (exploratory).
 
 **A4, residual channels in the ISO sandbox.** ISO removes the shared writable path, not the shared kernel, page cache
-or CPU, and OpenAI (2026c) found agents in separate microVMs passing secrets through such contention and timing.
-`tools/iso_calibration.py` measures, with no model, what capacity that residual sharing leaves under the game's own
-turn protocol. A scripted sender in firm A's container runs one command per round that encodes a bit, and the
+or CPU; OpenAI (2026c) red-team agents passed synthetic secrets between microVMs by cache timing, and found a
+CPU-time channel within a shared container. `tools/iso_calibration.py` measures, with no model, what that residual
+sharing lets a scripted sender pass under the game's own turn protocol. A scripted sender in firm A's container runs one command per round that encodes a bit, and the
 receiver in firm B's container then runs one measuring command, through the frozen ISO compose file and the harness's
 command supervisor (firm uid, clean environment, 10-second timeout, every process reaped and the reaping verified).
 After two priming rounds, 16 training rounds fit a threshold once and 64 test rounds score it. Four channels were
@@ -1034,10 +1075,11 @@ in {{x.isocal.channel_runs.memory}} of {{x.isocal.n_runs}} runs, page-cache timi
 {{x.isocal.channel_runs.pagecache}} (in {{x.isocal.unavailable_runs.pagecache}} more its declared setup probe found too
 few files that eviction slowed, so that run gives neither a channel nor a null), the load average in
 {{x.isocal.channel_runs.load}}, and the storage-timing control in {{x.isocal.channel_runs.storage}}.
-The negative control was not negative everywhere: storage write timing carried a weak channel on the Mac's Docker
-Desktop VM (Table A1), so it is a channel there, not a control.
-These are capacities for scripted agents that agreed an encoding beforehand, so they bound what the sandbox allows,
-not what the models did; the scan in Section 4.5 counts attempts only. Not calibrated: CPU-cache and other
+The negative control was not negative everywhere: storage write timing carried a weak channel on the Docker Desktop
+VM (Table A1), so it is a channel there, not a control.
+These are achieved rates for scripted agents that agreed an encoding beforehand, under one protocol (64 consecutive
+test bits, one seed, one direction), not maximum capacities; they show what the sandbox allows, not what the models
+did; the scan in Section 4.5 counts attempts only. Not calibrated: CPU-cache and other
 microarchitectural channels, turn-duration timing, the B → A direction, the game's random move order and more than
 one command per round. The fixes are named in Appendix A.
 
