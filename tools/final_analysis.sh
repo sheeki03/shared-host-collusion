@@ -33,7 +33,8 @@ RETIRED=(runs/full/ledger-mac.jsonl runs/remote/vps1/ledger-vps1.jsonl runs/remo
          runs/remote/instabox2/ledger-instabox2-pool.jsonl runs/remote/instabox3/ledger-instabox3-pool.jsonl  # D15
          runs/remote/instabox2/ledger-instabox2-kimi.jsonl                                                 # D24a
          runs/remote/instabox2/ledger-instabox2-kimi2.jsonl                                                # D25
-         runs/remote/instabox2/ledger-instabox2-kimi3.jsonl)                                               # D28
+         runs/remote/instabox2/ledger-instabox2-kimi3.jsonl                                                # D28
+         runs/remote/instabox2/ledger-instabox2-kimi4.jsonl)                                               # D35
 for f in ${EXTRA_RETIRED:-}; do RETIRED+=("$f"); done
 CALIB=(--run contabo_idle=runs/ext-remote/vps1/calibration/idle-seed0/isocal-idle-seed0.json
        --run contabo_loaded=runs/ext-remote/vps1/calibration/loaded-seed0/isocal-loaded-seed0.json
