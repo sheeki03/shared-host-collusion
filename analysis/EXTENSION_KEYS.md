@@ -70,6 +70,8 @@ Matching is on (model, scenario, seed).
 |---|---|---|
 | `ext.rep.{label,multiplicity,n_games}` | value | "replication (fresh seeds 2000+)"; the no-correction note; core games used |
 | `ext.rep.labels_source` | value | who labelled `--labels`: `classifier` (default; `analysis/llm_coder.py` only) or `hand-checked` |
+| `ext.rep.labels_blocked` | value | DEVIATIONS D29 applied to E1: `P1 (L2)`, `P2`, both, or `none`; a blocked contrast's keys and reading read `n/a (blocked: unknown labels, D29)` |
+| `ext.rep.bound_{lo,hi}.*` | value | D29 for E1: `P1.l2.*` and `P2.{chat,storage,storage_mon}.*`, `P2.supported` and the readings, on the label set with every unknown firm-turn and delivered message counted as no (`lo`) or yes (`hi`); written only when the endpoint is blocked |
 | `ext.rep.n_beta_unidentified` | value | ext-rep games whose per-game β_priv is NaN (they drop out of the β contrasts' matched units) |
 | `ext.rep.L2.*` | value | label coverage keys of `report_outputs.communication` for the ext-rep candidates (`status`, `n_candidates`, `labels_scratch.yes`, ...) |
 | `ext.rep.P1.l2` | effect | primary P1: (SHR-PERMITTED − ISO-PERMITTED) − (SHR-AWARE − ISO-AWARE), adjudicated addressed-write rate; `pending` without `--labels` |

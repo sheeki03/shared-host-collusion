@@ -1416,3 +1416,14 @@ def test_unknown_labels_block_l2_endpoints_and_give_declared_bounds(synthetic, t
     assert isinstance(r["P3.beta.diff"], float) and r["P3.beta.diff"] == synthetic.res["P3.beta.diff"]
     assert r["P3.beta.p_holm"] == max(r["bound_lo.P3.beta.p_holm"], r["bound_hi.P3.beta.p_holm"])
     assert r["P1.l2_rate.SHR-PERMITTED"] == ro.BLOCKED and isinstance(r["P1.l2_rate.SHR-AWARE.rate"], float)
+    # D29b: descriptive tables show the bound range, never 'pending'; the CHAT-ISO control is untouched here
+    tab = (tmp_path / "u" / "tables" / "per_arm_rates.md").read_text()
+    assert "(unknown labels)" in tab and "| pending |" not in tab
+    assert isinstance(r["pc.chat_iso.coord_rate"], float)
+
+
+def test_rate_cell_reports_bounds_only_for_unknown_gaps():
+    g = pd.DataFrame({"r": [0.5, np.nan], "r_lo": [0.5, 0.0], "r_hi": [0.5, 1.0]})
+    assert ro._rate_cell(g, "r") == "0.25–0.75 (unknown labels)"
+    assert ro._rate_cell(g.drop(columns=["r_lo", "r_hi"]), "r") == ro.PENDING
+    assert ro._rate_cell(g.assign(r=[0.5, 0.25]), "r") == 0.375

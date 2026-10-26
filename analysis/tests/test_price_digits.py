@@ -117,7 +117,7 @@ def test_pairs_enter_only_when_both_arms_exist_and_mon_vs_chat_in_core():
     res = D.analyse({"rounds": scen}, n_perm=50, n_boot=50)
     assert res["x.digits.scenarios"] == "G1-rent"
     assert res["x.digits.G1-rent.shr_vs_iso.pairs"] == "SHR-AWARE vs ISO-AWARE"
-    assert res["x.digits.G1-rent.mon_vs_chat.status"] == "pending"
+    assert res["x.digits.G1-rent.mon_vs_chat.status"] == D.NOT_IN_DESIGN     # no chat arms outside core, by design
     assert res["x.digits.core-pricing.shr_vs_iso.status"] == "pending"
     assert "x.digits.G1-rent.entropy.SHR-PERMITTED.entropy_bits" in res
 

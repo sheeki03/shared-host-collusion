@@ -721,7 +721,8 @@ def ci_reading(res: Mapping[str, Any], prefix: str) -> str:
     interval (pending / insufficient data) when it has no numeric bounds."""
     lo, hi = res.get(f"{prefix}.ci_lo"), res.get(f"{prefix}.ci_hi")
     if not (_is_num(lo) and _is_num(hi)):
-        return PENDING if PENDING in (lo, hi, res.get(f"{prefix}.diff")) else INSUFFICIENT
+        vals = (lo, hi, res.get(f"{prefix}.diff"))
+        return ro.BLOCKED if ro.BLOCKED in vals else PENDING if PENDING in vals else INSUFFICIENT
     if lo > 0:
         return "CI above 0"
     if hi < 0:
@@ -733,7 +734,7 @@ def p2_reading(res: Mapping[str, Any], p: str) -> str:
     """Displacement needs both parts (stats.displacement_test); a part whose CI includes 0 leaves P2 inconclusive."""
     sup = res.get(f"{p}.P2.supported")
     if not isinstance(sup, bool):
-        return sup if sup in (PENDING, INSUFFICIENT) else INSUFFICIENT
+        return sup if sup in (PENDING, INSUFFICIENT, ro.BLOCKED) else INSUFFICIENT
     if sup:
         return "both parts hold (displacement)"
     opposite = (ci_reading(res, f"{p}.P2.chat") == "CI above 0"
@@ -765,6 +766,8 @@ def analyse_rep(run: Run, games: pd.DataFrame, *, labels_source: str = LABELS_SO
     have_l2 = bool(in_p1.any() and core.loc[in_p1, "addressed_write_rate"].notna().all())
     have_chat = bool(in_chat.any() and core.loc[in_chat, "chat_coordination"].notna().all()
                      and has_arms(core, CHAT_ARMS))
+    l2_unknown = ro._blocked_by_unknown(core, P1_ARMS, "addressed_write_rate")   # DEVIATIONS D29, applied to E1
+    chat_unknown = ro._blocked_by_unknown(core, CHAT_ARMS, "chat_coordination")
     fac = dict(treatment_t=P1_ARMS[0], treatment_c=P1_ARMS[1], baseline_t=P1_ARMS[2], baseline_c=P1_ARMS[3])
     mon = dict(treatment_t="CHAT-MON-SHR", treatment_c="CHAT-MON-ISO", baseline_t="CHAT-SHR", baseline_c="CHAT-ISO")
     # P1: permission x storage on the addressed-write rate (primary), beta (supporting)
@@ -773,7 +776,7 @@ def analyse_rep(run: Run, games: pd.DataFrame, *, labels_source: str = LABELS_SO
             core, "addressed_write_rate", **fac, cluster=cl, **kw), frame=core, arms=P1_ARMS)
     else:
         p1 = None
-        put_pending(res, f"{p}.P1.l2")
+        put_pending(res, f"{p}.P1.l2", ro.BLOCKED if l2_unknown else PENDING)
     contrast(run, f"{p}.P1.beta", lambda cl, kw: stats.factorial_effect(core, "beta", **fac, cluster=cl, **kw),
              frame=core, arms=P1_ARMS)
     # P2: displacement (both parts), the stats.primary_analysis call
@@ -799,7 +802,7 @@ def analyse_rep(run: Run, games: pd.DataFrame, *, labels_source: str = LABELS_SO
         res[f"{p}.P2.supported"], res[f"{p}.P2.n_quads"] = bool(d.displacement), int(d.n_quads)
         res[f"{p}.P2.supported_seedblock"] = bool(d_sb.displacement) if d_sb is not None else INSUFFICIENT
     else:
-        status = PENDING if not have_chat else INSUFFICIENT
+        status = ro.BLOCKED if chat_unknown else PENDING if not have_chat else INSUFFICIENT
         put_pending(res, f"{p}.P2.chat", status)
         inter = contrast(run, f"{p}.P2.storage", lambda cl, kw: stats.factorial_effect(
             core, "beta", **mon, cluster=cl, **kw), frame=core, arms=CHAT_ARMS)
@@ -831,7 +834,8 @@ def analyse_rep(run: Run, games: pd.DataFrame, *, labels_source: str = LABELS_SO
     res[f"{p}.P1.p_family_raw"] = fam(p1, "P1.l2")
     res[f"{p}.P2.p_family_raw"] = (ro._num(max(d.chat_monitoring.p_signflip, d.storage_mon["beta"].p_signflip,
                                                 d.storage_interaction["beta"].p_signflip) if d.displacement else 1.0)
-                                   if d is not None else (PENDING if not have_chat else INSUFFICIENT))
+                                   if d is not None else (ro.BLOCKED if chat_unknown else
+                                                          PENDING if not have_chat else INSUFFICIENT))
     res[f"{p}.P3.p_family_raw"] = fam(p3, "P3.beta")
     for e in REP_EFFECTS:
         res[f"{p}.{e}.reading"] = ci_reading(res, f"{p}.{e}")
@@ -861,10 +865,41 @@ def analyse_rep(run: Run, games: pd.DataFrame, *, labels_source: str = LABELS_SO
                      "beta": g["beta"].mean(), "collusion_index_last10": g["collusion_index_last10"].mean(),
                      "l1_rate_verified": g["l1_rate"].mean(), "l1_unknown_turns": int(n_unk.fillna(0).sum()),
                      "scratch_cmd_rate": g["scratch_cmd_rate"].mean(),
-                     "addressed_write_rate": PENDING if aw.isna().any() else aw.mean()})
+                     "addressed_write_rate": ro._rate_cell(g, "addressed_write_rate")})
     run.tables["ext_rep_arms"] = pd.DataFrame(arms)
     for arm in DESIGN["ext-rep"]["arms"]:
         put_mean(run, f"{p}.arm.{arm}.beta", core.loc[core["arm"] == arm, "beta"])
+    rep_unknown_bounds(run, core, l2_unknown, chat_unknown, fac)
+
+
+def rep_unknown_bounds(run: Run, core: pd.DataFrame, l2_unknown: bool, chat_unknown: bool, fac: dict) -> None:
+    """DEVIATIONS D29 for E1: when unknown labels block P1 (L2) or P2, the same contrasts on the two completed label
+    sets (ext.rep.bound_lo.* = every unknown firm-turn / delivered message counted as no, ext.rep.bound_hi.* = as yes)
+    with their readings; ext.rep.labels_blocked names what was blocked."""
+    res, p = run.res, "ext.rep"
+    res[f"{p}.labels_blocked"] = ", ".join(k for k, b in (("P1 (L2)", l2_unknown), ("P2", chat_unknown)) if b) or "none"
+    for tag, sfx in (("bound_lo", "_lo"), ("bound_hi", "_hi")) if (l2_unknown or chat_unknown) else ():
+        cb = core.copy()
+        for col in ("addressed_write_rate", "chat_coordination"):
+            if f"{col}{sfx}" in cb.columns:
+                cb[col] = cb[col].where(cb[col].notna(), cb[f"{col}{sfx}"])
+        q = f"{p}.{tag}"
+        if l2_unknown:
+            contrast(run, f"{q}.P1.l2", lambda cl, kw, cb=cb: stats.factorial_effect(
+                cb, "addressed_write_rate", **fac, cluster=cl, **kw), frame=cb, arms=P1_ARMS)
+            res[f"{q}.P1.l2.reading"] = ci_reading(res, f"{q}.P1.l2")
+        if chat_unknown:
+            db = _try(run, f"{q}.P2", lambda cb=cb: stats.displacement_test(
+                cb, storage_cols=P2_STORAGE_COLS, primary_storage_col="beta", **run.kw(f"{q}.P2")))
+            if db is not None:
+                ro.put_effect(res, f"{q}.P2.chat", db.chat_monitoring)
+                ro.put_effect(res, f"{q}.P2.storage", db.storage_interaction["beta"])
+                ro.put_effect(res, f"{q}.P2.storage_mon", db.storage_mon["beta"])
+                res[f"{q}.P2.supported"] = bool(db.displacement)
+            else:
+                put_pending(res, f"{q}.P2.chat", INSUFFICIENT)
+                res[f"{q}.P2.supported"] = INSUFFICIENT
+            res[f"{q}.P2.reading"] = p2_reading(res, q)
 
 
 # ----------------------------------------------------------------------------------------------------------------------

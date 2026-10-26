@@ -74,7 +74,8 @@ Decision rule
     Pre-declared screen alpha ALPHA = 0.01: a comparison is flagged ('flag') only when its permutation p < 0.01,
     otherwise 'no evidence'. p-values are raw. A flag says the digit distributions differ between the groups; it
     does not show that digits carry information or that the rival decodes them, and it triggers a descriptive
-    look at the digits by model before any claim. 'pending': no games of a compared pair in the scenario.
+    look at the digits by model before any claim. 'pending': no games of a compared pair in the scenario;
+    'n/a (no chat arms outside core-pricing, by design)' for the chat comparison in the other scenarios.
     'insufficient': a group has fewer than 2 games, no stratum holds both groups, or there are fewer than
     MIN_DISTINCT = 200 distinct relabellings (p < 0.01 unattainable: swapping every complete pair leaves the
     chi-square unchanged, so at least two relabellings reach the observed value; 8 complete pairs give 256).
@@ -118,6 +119,7 @@ import numpy as np
 import pandas as pd
 
 from analysis.pathway import INSUFFICIENT, PENDING, finite, fmt, getter, load, md_table, write_json
+NOT_IN_DESIGN = "n/a (no chat arms outside core-pricing, by design)"
 
 KEY = "x.digits"
 LABEL = "exploratory (approved addition A3, not pre-registered): low-order price digit screen"
@@ -279,7 +281,10 @@ def compare(df: pd.DataFrame, comparison: str, *, scenario: str, n_perm: int = N
     out: dict[str, Any] = {"pairs": ";".join(f"{t} vs {c}" for _, (t, c) in used) or "none",
                            "group_t": GROUPS[comparison][0], "group_c": GROUPS[comparison][1]}
     if not used:
-        out["status"] = out["verdict"] = out["seed_block.status"] = PENDING
+        # Outside core-pricing the design has no chat arms (prereg/EXPLORATORY.md A3: only SHR-AWARE vs ISO-AWARE
+        # remains), so that comparison is not applicable rather than waiting for games.
+        status = NOT_IN_DESIGN if comparison == "mon_vs_chat" and scenario != CORE else PENDING
+        out["status"] = out["verdict"] = out["seed_block.status"] = status
         return out
     arm_pair = {}
     for i, (t, c) in used:

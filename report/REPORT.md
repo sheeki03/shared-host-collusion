@@ -286,8 +286,11 @@ Table C1 gives per-arm rates of every endpoint, pooled over models; Table C3 sum
 
 Both positive controls must respond for a null elsewhere to mean anything; a control fails when its 95% interval
 does not lie above zero (a rule fixed before the final run; Appendix E). In core CHAT-ISO games, delivered
-coordination averaged {{pc.chat_iso.coord_rate}} per subject firm-turn (95% CI {{pc.chat_iso.coord_rate.ci_lo}} to
-{{pc.chat_iso.coord_rate.ci_hi}}; {{pc.chat_iso.coord_rate.n}} games), and the matched CHAT-ISO − ISO-AWARE
+coordination averaged {{pc.chat_iso.coord_rate.bound_lo}} to {{pc.chat_iso.coord_rate.bound_hi}} per subject firm-turn
+as unknown chat labels count as no or yes (95% CIs {{pc.chat_iso.coord_rate.bound_lo.ci_lo}} to
+{{pc.chat_iso.coord_rate.bound_lo.ci_hi}} and {{pc.chat_iso.coord_rate.bound_hi.ci_lo}} to
+{{pc.chat_iso.coord_rate.bound_hi.ci_hi}}; {{pc.chat_iso.coord_rate.n}} games; a model passes or fails this control
+only if both bounds agree, D29), and the matched CHAT-ISO − ISO-AWARE
 difference in Δp was {{pc.chat_iso.dp.diff}} ({{pc.chat_iso.dp.ci_lo}} to {{pc.chat_iso.dp.ci_hi}};
 {{pc.chat_iso.dp.n_pairs}} pairs). In ORACLE, whose inbox shows the rival's private data, pooled β_priv was
 {{pc.oracle.beta_priv.est}} ({{pc.oracle.beta_priv.ci_lo}} to {{pc.oracle.beta_priv.ci_hi}};
@@ -1051,6 +1054,14 @@ coordination under the monitor was {{ext.rep.P2.chat.diff}} ({{ext.rep.P2.chat.c
 {{ext.rep.P2.storage.p}}). Both parts of the displacement criterion held: {{ext.rep.P2.supported}}. The P3 contrast in
 β_priv, SHR-AWARE minus ISO-AWARE, was {{ext.rep.P3.beta.diff}} ({{ext.rep.P3.beta.ci_lo}} to
 {{ext.rep.P3.beta.ci_hi}}; p = {{ext.rep.P3.beta.p}}). With 18 units, only a large effect could have replicated.
+<!-- if ext.rep.labels_blocked names P1 (L2) and/or P2 (D29 applied to E1), replace the P1 and P2 chat sentences above
+with the bounds and say the E1 claim is blocked by unknown labels: "The classifier left some E1 labels unknown, which
+blocks these readings as for the confirmatory family (D29). Counting each unknown as no or as yes, the P1 interaction
+was ext.rep.bound_lo.P1.l2.diff (CI ...) or ext.rep.bound_hi.P1.l2.diff (CI ...), read ext.rep.bound_lo.P1.l2.reading
+and ext.rep.bound_hi.P1.l2.reading; the change in delivered chat coordination was ext.rep.bound_lo.P2.chat.diff or
+ext.rep.bound_hi.P2.chat.diff, and displacement read ext.rep.bound_lo.P2.reading and ext.rep.bound_hi.P2.reading."
+Use double-brace placeholders for these keys when switching. -->
+
 <!-- Classify each of P1-P3 against the confirmatory verdict with the pre-declared rule and give the verdict in one
 sentence each.
 - Confirmatory result supported: E1 replicates if it has the same sign and a 95% CI that excludes zero. For P2,
