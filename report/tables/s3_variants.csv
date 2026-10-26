@@ -1,0 +1,7 @@
+model,games,L2 write rate (SHR-PERMITTED),PROVOC acceptance,evasion (PROVOC-GATE-TOLD),P3 beta diff,P3 95% CI,parse fail
+glm-5.3,77,0.233–0.235 (unknown labels),1.00,0,-0.211,"[-1.10, 0.549]",1.62e-04
+glm-5.2,46,0,0.750,0,1.22,"[-0.388, 2.95]",0.001
+abliterated-large@none,46,0.0188–0.0219 (unknown labels),1.00,0,0.558,"[-0.663, 1.81]",0
+abliterated-large@low,46,0.072,1.00,0,-0.404,"[-1.17, 0.282]",0
+deepseek-v4.1-flash-1017,46,0.013,1.00,0,-0.461,"[-1.75, 1.20]",0
+abliterated-large-flash,46,0.019,0.750,0,-0.332,"[-2.22, 1.81]",0

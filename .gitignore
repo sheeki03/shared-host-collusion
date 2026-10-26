@@ -9,3 +9,5 @@ runs-e2e.log
 bin/*
 !bin/*.sha256
 bin-build.log
+# Local intermediate used to build the curated public SUBMISSION.md and document package.
+report/REPORT.filled.md

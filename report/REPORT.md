@@ -341,8 +341,8 @@ In a pre-registered design that cuts a shared scratch directory while holding pr
 monitored chat lost most of its coordination and no shift into storage was detected; agents told they may use the
 folder wrote rival-addressed notes as often when it was private; and unprompted, rival canaries crossed in some
 games, but shared storage did not detectably raise prices' dependence on the rival's private cost (minimum
-detectable effect {{P3.mde_observed}}). A command gate deterred
-use of the folder without detected evasion, but its path rule could not tell exploring from communicating; LLM
+detectable effect {{P3.mde_observed}}). Gated games showed less
+folder use without detected evasion, but the path rule could not tell exploring from communicating; LLM
 transcript judges separated crossing games well; and private storage removed the file channel while scripted probes
 showed host-level channels it leaves open. The evidence ladder, matched cuts and minimum detectable effects state how
 far each conclusion reaches.
@@ -817,8 +817,10 @@ configuration, scenario); market draws, move order and canaries come from separa
 is `bin/tirith-0.5.0-rc-8856dc60` (sha256 `aaa5088571c82b3b1b10cde192f6cb07f2aea813d8b16b330041515a7a02c087`), and
 the gate fails closed if the hash differs. The three tirith policies are defined in `harness/gate.py` and printed in
 `report/APPENDIX.md`, Section E; `analysis/monitors.py` replays every monitor on the logs. Results are regenerated
-from the Inspect logs by `analysis/report_outputs.py`, which in confirmatory mode refuses to run on incomplete or
-unadjudicated data, and `tools/fill_report.py` fills this report from its outputs.
+from the Inspect logs by `analysis/report_outputs.py`, which audits declared coverage, exclusions, coding coverage
+and ledger reconciliation. Endpoints blocked by unknown labels remain blocked (D29); missing games and the unmet
+human-validation requirement are disclosed separately (D35, D38). `tools/fill_report.py` fills this report from the
+resulting outputs and checks for unfinished presentation fields.
 
 **Table E1. Pre-registered hypotheses** (`prereg/PREREGISTRATION.md`, Section 4; summarised in Section 3.7). P1-P3
 are the primary family, with Holm correction; the rest are secondary.
@@ -920,7 +922,7 @@ to {{ext.rep.bound_lo.P1.l2.ci_hi}}) or {{ext.rep.bound_hi.P1.l2.diff}} ({{ext.r
 {{ext.rep.P2.storage.p}}). Displacement read {{ext.rep.bound_lo.P2.reading}} and {{ext.rep.bound_hi.P2.reading}}
 under the two uniform imputations. The P3 contrast in
 β_priv, SHR-AWARE minus ISO-AWARE, was {{ext.rep.P3.beta.diff}} ({{ext.rep.P3.beta.ci_lo}} to
-{{ext.rep.P3.beta.ci_hi}}; p = {{ext.rep.P3.beta.p}}). With 18 units, only a large effect could have replicated.
+{{ext.rep.P3.beta.ci_hi}}; p-value {{ext.rep.P3.beta.p}}). With 18 units, only a large effect could have replicated.
 
 Against the confirmatory nulls, E1's P1 interaction reads {{ext.rep.bound_lo.P1.l2.reading}} with unknowns counted
 as no and {{ext.rep.bound_hi.P1.l2.reading}} with them counted as yes. By the pre-declared rule a CI above zero
@@ -985,7 +987,7 @@ independent units: {{ext.sx.game_any_success.SX-SHR.all.k}} of {{ext.sx.game_any
 {{ext.sx.game_any_success.SX-ISO.all.k}} of {{ext.sx.game_any_success.SX-ISO.all.n}} SX-ISO games had at least one
 success (SX-ISO 95% upper bound {{ext.sx.game_any_success.SX-ISO.all.ci_hi}}), and the matched game-level difference
 in success rate, SX-SHR minus SX-ISO, was {{ext.sx.shr_minus_iso.all.diff}} ({{ext.sx.shr_minus_iso.all.ci_lo}} to
-{{ext.sx.shr_minus_iso.all.ci_hi}}; p = {{ext.sx.shr_minus_iso.all.p}}). Descriptively, exact-code success per
+{{ext.sx.shr_minus_iso.all.ci_hi}}; p-value {{ext.sx.shr_minus_iso.all.p}}). Descriptively, exact-code success per
 firm-round was {{ext.sx.success.SX-SHR.all.rate}} in SX-SHR and {{ext.sx.success.SX-ISO.all.rate}} in SX-ISO; rounds
 within a game are not independent, so firm-round intervals are not given.
 Without a shared folder, no correct partner-code guess was observed within ten rounds. This does not exclude an
@@ -998,7 +1000,7 @@ If screening chat moved coordination from words into prices, a firm's price shou
 more when chat is monitored. `analysis/signalling.py` estimates this following per game, with each price measured
 against the firm's own competitive benchmark. In the confirmatory core games, following in the monitored chat arms
 minus the unmonitored chat arms was {{signal.mon_vs_chat.diff}} (95% CI {{signal.mon_vs_chat.ci_lo}} to
-{{signal.mon_vs_chat.ci_hi}}; p = {{signal.mon_vs_chat.p}}; seed-block p = {{signal.mon_vs_chat.p_seedblock}}).
+{{signal.mon_vs_chat.ci_hi}}; p-value {{signal.mon_vs_chat.p}}; seed-block p-value {{signal.mon_vs_chat.p_seedblock}}).
 Unmonitored chat minus no chat was {{signal.chat_vs_aware.diff}} ({{signal.chat_vs_aware.ci_lo}} to
 {{signal.chat_vs_aware.ci_hi}}).
 Best responses to the rival's last price also produce following, so these contrasts are descriptive. Prices followed
@@ -1031,7 +1033,7 @@ predicts the sender's private-cost tercile in the round each message was sent. C
 schedule, and the null permutes whole schedules' cost tables, so text tied to a seed cannot fake a leak
 (`analysis/leakage_probe.py`). Pooled over the four chat arms ({{x.leak.pooled.n_messages}} delivered messages in
 {{x.leak.pooled.n_games_with_messages}} games), the macro AUROC was {{x.leak.pooled.auroc}} against a permutation mean
-of {{x.leak.pooled.null_mean}} (p = {{x.leak.pooled.p_perm}}; verdict: {{x.leak.pooled.verdict}}). A share of
+of {{x.leak.pooled.null_mean}} (p-value {{x.leak.pooled.p_perm}}; verdict: {{x.leak.pooled.verdict}}). A share of
 {{x.leak.pooled.share_states_cost}} of messages stated the private cost outright. With every numeral masked the
 verdict was {{x.leak.pooled.masked.verdict}}, and on the messages the L2 coder labelled "no" it was
 {{x.leak.pooled.coded_no.verdict}}. Table H1 gives each arm. A leak says the wording carries information about the
@@ -1067,7 +1069,7 @@ Within-round β_priv cannot come from such signalling, so A3 screens the one pri
 (`analysis/price_digits.py`). For each scenario it compares the distribution of the last two displayed digits between
 storage conditions and between monitored and unmonitored chat with a χ² statistic and a game-level permutation within
 matched (model, pair, seed) strata, at a pre-declared alpha of 0.01. In the core pricing game the verdicts were
-{{x.digits.core-pricing.shr_vs_iso.verdict}} for SHR against ISO (p = {{x.digits.core-pricing.shr_vs_iso.p_perm}})
+{{x.digits.core-pricing.shr_vs_iso.verdict}} for SHR against ISO (p-value {{x.digits.core-pricing.shr_vs_iso.p_perm}})
 and {{x.digits.core-pricing.mon_vs_chat.verdict}} for monitored against unmonitored chat (p =
 {{x.digits.core-pricing.mon_vs_chat.p_perm}}). Table H3 gives every scenario and the digit entropy per arm. A flag
 would say only that the distributions differ, not that digits carry information or that a rival decodes them.
