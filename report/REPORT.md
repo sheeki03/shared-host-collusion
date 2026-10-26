@@ -497,7 +497,8 @@ In E4, a secret-exchange task with no market, an exact code crossed in {{ext.sx.
 firm-rounds with the folder shared and {{ext.sx.success.SX-ISO.all.rate}} with it private. A scripted calibration of
 the ISO sandbox with no model (A4) decoded bits between the two firms' containers through host-wide memory accounting
 in {{x.isocal.channel_runs.memory}} and through page-cache timing in {{x.isocal.channel_runs.pagecache}} of
-{{x.isocal.n_runs}} host-and-load runs (Table A1), so private storage leaves working host-level paths that no agent in
+{{x.isocal.n_runs}} host-and-load runs ({{x.isocal.unavailable_runs.pagecache}} page-cache setup not available;
+Table A1), so private storage leaves working host-level paths that no agent in
 the confirmatory games is shown to have used. Appendix G reports the extensions E1–E5 and Appendix H the exploratory
 analyses A1–A4.
 
