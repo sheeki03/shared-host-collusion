@@ -89,3 +89,10 @@ Times are IST. Newest entries at the bottom of each step.
 - Report: Section 4.6 summary; extensions now Appendix G; A1–A4 Appendix H; A4 matrix Table A1. The final sequence is `tools/final_analysis.sh` (stages sync, audit, judges, code, handcheck, agree, outputs, extras, fill), with `tools/merge_results.py` feeding `tools/fill_report.py`.
 - Tests: `.venv/bin/python -m pytest -q -p no:cacheprovider` at commit 234695a: 1,259 passed, 2 skipped (10 min 20 s). To be re-run after the last code change.
 - Still with the owner: the 50 + 50 hand-check labels (sheet drawn once the final set is coded), the LLM Usage Statement, and the account balance and top-up history for cost quantity 3.
+
+## Analysis cut and final analysis (Mon 26 Oct 08:20–08:40 IST)
+- Cut at 08:20 (D35): every confirmatory game is complete except the 39-game Kimi K3.1 Pro stream, which completed no game in six launches (provider refusals under load) and is reported as missing. Extensions: E1 144/144, E2 24/24, E3 16/16, E4 28 analysed of 32 (one informative exclusion, D24; three Opus 5.5 SX-ISO games over the pre-registered 20% parse-failure rule).
+- Final passes: L2 coder strict pass complete (18,311 items; $34.76 total), E1 coder ($6.27), S6 judges census of 991 games; confirmatory report_outputs (preliminary=False, 1,091/1,131), extensions, signalling, A1–A3, A4 matrix (six runs) merged into runs/analysis/final (8,607 keys).
+- Unknown labels (877) block the P1 L2 and P2 claims as pre-registered; both are reported with declared bounds (D29, D29b). Analysis code was tagged `analysis-freeze` before outcomes were first read (D31); later analysis changes are D32–D35.
+- Report: result text written; main text cut from about 15 to 8 estimated pages (arms and monitor tables, two figures, pilot and costs moved to appendices). Every result-dependent sentence was re-checked against the final results. `tools/export_docx.sh` writes the .docx for the Google Docs template.
+- The confirmatory render (`tools/final_analysis.sh agree outputs extras fill`) waits only on the owner: the 100-item hand-check, the LLM Usage Statement and the account top-up total for cost quantity 3.
