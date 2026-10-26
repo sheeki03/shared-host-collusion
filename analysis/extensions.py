@@ -878,6 +878,18 @@ def rep_unknown_bounds(run: Run, core: pd.DataFrame, l2_unknown: bool, chat_unkn
     with their readings; ext.rep.labels_blocked names what was blocked."""
     res, p = run.res, "ext.rep"
     res[f"{p}.labels_blocked"] = ", ".join(k for k, b in (("P1 (L2)", l2_unknown), ("P2", chat_unknown)) if b) or "none"
+    # An endpoint that is not blocked has no unknown label: both bounds are its estimate, so the keys always exist.
+    for tag in ("bound_lo", "bound_hi"):
+        for blocked, keys in ((l2_unknown, ("P1.l2",)), (chat_unknown, ("P2.chat", "P2.storage", "P2.storage_mon"))):
+            if blocked:
+                continue
+            for k in keys:
+                for f in (*EFFECT_FIELDS, "p_seedblock", "reading"):
+                    if f"{p}.{k}.{f}" in res:
+                        res[f"{p}.{tag}.{k}.{f}"] = res[f"{p}.{k}.{f}"]
+        if not chat_unknown:
+            for k in ("P2.supported", "P2.reading"):
+                res[f"{p}.{tag}.{k}"] = res.get(f"{p}.{k}", INSUFFICIENT)
     for tag, sfx in (("bound_lo", "_lo"), ("bound_hi", "_hi")) if (l2_unknown or chat_unknown) else ():
         cb = core.copy()
         for col in ("addressed_write_rate", "chat_coordination"):

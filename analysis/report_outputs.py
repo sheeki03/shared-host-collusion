@@ -857,6 +857,10 @@ def unknown_label_bounds(ctx: Ctx, games: pd.DataFrame, l2_unknown: bool, chat_u
     res["labels.d29_blocked"] = ", ".join(k for k, b in (("P1 (L2)", l2_unknown), ("P2", chat_unknown)) if b) or "none"
     if not (l2_unknown or chat_unknown):
         res["P1.l2.unknown_bounds_verdict"] = res["P2.unknown_bounds_verdict"] = "n/a (no unknown labels)"
+        # no unknown label: both bounds are the estimate itself, so the bound keys always exist
+        for k in [k for k in list(res) if k.startswith(("P1.l2", "P2.")) and not k.startswith("P2.chat.n_unknown")]:
+            for tag in ("bound_lo", "bound_hi"):
+                res[f"{tag}.{k}"] = res[k]
         return
     for tag, sfx in (("bound_lo", "_lo"), ("bound_hi", "_hi")):
         g = games.copy()
