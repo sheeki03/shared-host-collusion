@@ -168,8 +168,9 @@ Pilot seeds (9000+) never enter estimates; Appendix E summarises the pilot.
 ### 4.0 Runs, exclusions and positive controls
 
 We analysed {{meta.n_complete}} complete games ({{meta.n_rounds}} rounds) of {{meta.n_games}} planned, on
-{{meta.n_hosts}} machines; {{meta.n_excluded}} were excluded (Table C10) and {{meta.parse_failure_rate}} of firm-turns
-used the fallback action. Costs are in Appendix E. Of {{L2.n_candidates}}
+{{meta.n_hosts}} machines. The {{meta.n_excluded}} planned games not analysed (Table C10) are the 39-game Kimi K3.1 Pro
+stream, which never completed because its provider refused its calls under load (D35), and those removed by the
+pre-registered exclusion rules; {{meta.parse_failure_rate}} of firm-turns used the fallback action. Costs are in Appendix E. Of {{L2.n_candidates}}
 communication candidates, {{L2.labels_scratch.unknown}} scratch and {{L2.labels_chat.unknown}} chat candidates
 remained unknown. In the blinded check of {{coding.handcheck.n}} candidates (D30) the author agreed with the
 classifier on {{coding.handcheck.raw_agreement}} (Wilson 95% CI {{coding.handcheck.raw_ci_lo}} to
