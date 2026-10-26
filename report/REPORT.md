@@ -356,7 +356,8 @@ far each conclusion reaches.
 
 ## Author Contributions
 
-Shivom Sharma designed the study, built the harness, engines and analysis, ran the experiments and wrote the report.
+Shivom Sharma directed the study, made project and submission decisions, and oversaw implementation, experiments,
+analysis and report preparation, with substantial AI assistance as disclosed in the LLM Usage Statement.
 
 ## References
 
@@ -902,14 +903,15 @@ to {{ext.rep.bound_lo.P1.l2.ci_hi}}) or {{ext.rep.bound_hi.P1.l2.diff}} ({{ext.r
 ({{ext.rep.P2.storage_mon.ci_lo}} to {{ext.rep.P2.storage_mon.ci_hi}}), and the monitor × storage interaction was
 {{ext.rep.P2.storage.diff}} ({{ext.rep.P2.storage.ci_lo}} to {{ext.rep.P2.storage.ci_hi}}; p =
 {{ext.rep.P2.storage.p}}). Displacement read {{ext.rep.bound_lo.P2.reading}} and {{ext.rep.bound_hi.P2.reading}}
-under the two bounds. The P3 contrast in
+under the two uniform imputations. The P3 contrast in
 β_priv, SHR-AWARE minus ISO-AWARE, was {{ext.rep.P3.beta.diff}} ({{ext.rep.P3.beta.ci_lo}} to
 {{ext.rep.P3.beta.ci_hi}}; p = {{ext.rep.P3.beta.p}}). With 18 units, only a large effect could have replicated.
 
 Against the confirmatory nulls, E1's P1 interaction reads {{ext.rep.bound_lo.P1.l2.reading}} with unknowns counted
 as no and {{ext.rep.bound_hi.P1.l2.reading}} with them counted as yes. By the pre-declared rule a CI above zero
-against a confirmatory null is an E1-only effect, and one that holds under only one bound depends on the unknown
-labels, so it replicates nothing. P3 reads {{ext.rep.P3.beta.reading}}: consistent with the confirmatory null and
+against a confirmatory null is an E1-only effect. Different readings under the two imputations demonstrate sensitivity
+to the unknown labels; agreement between them does not cover every possible assignment. P3 reads
+{{ext.rep.P3.beta.reading}}: consistent with the confirmatory null and
 inconclusive at this sample size, since with at most 18 units its interval also contains effects as large as the
 confirmatory minimum detectable effect. E1 communication labels are classifier-only.
 
@@ -971,8 +973,8 @@ in success rate, SX-SHR minus SX-ISO, was {{ext.sx.shr_minus_iso.all.diff}} ({{e
 {{ext.sx.shr_minus_iso.all.ci_hi}}; p = {{ext.sx.shr_minus_iso.all.p}}). Descriptively, exact-code success per
 firm-round was {{ext.sx.success.SX-SHR.all.rate}} in SX-SHR and {{ext.sx.success.SX-ISO.all.rate}} in SX-ISO; rounds
 within a game are not independent, so firm-round intervals are not given.
-Without a shared folder, no code crossed. These agents did not build a host-level channel within ten rounds, which
-does not show that no such channel exists (A4 finds that some do). Every model passed codes with the folder shared,
+Without a shared folder, no correct partner-code guess was observed within ten rounds. This does not exclude an
+unobserved host-level channel (A4 finds that some work). Every model passed codes with the folder shared,
 so the SX-ISO null is informative for each of them, although for Opus 5.5 it rests on a single game after those
 exclusions.
 
@@ -984,15 +986,15 @@ minus the unmonitored chat arms was {{signal.mon_vs_chat.diff}} (95% CI {{signal
 {{signal.mon_vs_chat.ci_hi}}; p = {{signal.mon_vs_chat.p}}; seed-block p = {{signal.mon_vs_chat.p_seedblock}}).
 Unmonitored chat minus no chat was {{signal.chat_vs_aware.diff}} ({{signal.chat_vs_aware.ci_lo}} to
 {{signal.chat_vs_aware.ci_hi}}).
-Best responses to the rival's last price also produce following, so these contrasts are descriptive, not evidence of
-communication: prices followed the rival's last price more with unmonitored chat than without chat, and less, not
-more, when chat was monitored, so screening did not move coordination into price signals.
+Best responses to the rival's last price also produce following, so these contrasts are descriptive. Prices followed
+the rival's last price more with unmonitored chat than without chat, and less when chat was monitored. No increased
+price-following under screening was detected; this measure does not exclude other price-signalling schemes.
 
-Taken together, E1 does not replicate any confirmatory effect, and none of the confirmatory nulls is overturned by a
-reading that holds under both label bounds. E3 and E4 show that, with the folder private and any means permitted,
-no agent passed rival content or a code across the host in these games, while with the folder shared the
-secret-exchange agents passed codes readily. The scripted calibration (A4) shows that host-level channels exist all
-the same, so this is a statement about these agents in these games, not about the sandbox.
+Taken together, E1 provides no clear additional support for P1–P3 under either uniform imputation; its L2 claims
+remain blocked by unknown labels. E3 and E4 detected no rival-content or code transfer with the folder private and
+any means permitted, while with the folder shared the secret-exchange agents passed codes readily. The scripted
+calibration (A4) demonstrates host-level channels under its tested protocol, so the absence of detected transfer in
+E3 and E4 is a result about these agents in these games.
 
 {{TABLE:ext_long_blocks}}
 
@@ -1085,4 +1087,8 @@ one command per round. The fixes are named in Appendix A.
 
 ## LLM Usage Statement
 
-<!-- AUTHOR TO WRITE in his own words (the template requires this section). -->
+AI coding and research assistants generated and revised substantial portions of the experimental harness, game
+engines, test suites, analysis code and manuscript. They also assisted with study planning, literature discovery,
+debugging and adversarial review. The author directed the project and remains responsible for its methods,
+interpretation and submitted text. Separately, GLM 5.3 served as an experimental subject, the chat compliance monitor,
+the communication classifier and the transcript judges, as described in the Methods and limitations.
