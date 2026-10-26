@@ -268,7 +268,7 @@ do not test a hypothesis.
 ### 4.0 Runs, exclusions and positive controls
 
 We obtained {{meta.n_complete}} complete games ({{meta.n_rounds}} rounds) out of {{meta.n_games}} in the analysis
-manifest, on {{meta.hosts}}. Calls in those selected complete games cost ${{meta.total_cost_usd}}; this excludes
+manifest, on {{meta.n_hosts}} machines. Calls in those selected complete games cost ${{meta.total_cost_usd}}; this excludes
 pilot, incomplete, superseded and extension attempts and is not the total account bill. The deduplicated game
 ledgers settled ${{meta.ledger_settled_usd}}, of which ${{meta.ledger_full_reservation_usd}} was charged at the full
 reservation because no provider cost was returned (an upper bound). Over the collection window the provider account
@@ -294,7 +294,9 @@ only if both bounds agree, D29), and the matched CHAT-ISO − ISO-AWARE
 difference in Δp was {{pc.chat_iso.dp.diff}} ({{pc.chat_iso.dp.ci_lo}} to {{pc.chat_iso.dp.ci_hi}};
 {{pc.chat_iso.dp.n_pairs}} pairs). In ORACLE, whose inbox shows the rival's private data, pooled β_priv was
 {{pc.oracle.beta_priv.est}} ({{pc.oracle.beta_priv.ci_lo}} to {{pc.oracle.beta_priv.ci_hi}};
-{{pc.oracle.beta_priv.n_games}} games). Models failing a control: {{pc.failed_models}};
+{{pc.oracle.beta_priv.n_games}} games). Models failing a control: {{pc.failed_models}} (CHAT-ISO coordination:
+{{pc.chat_iso.coord_rate.failed_models}}; CHAT-ISO Δp: {{pc.chat_iso.dp.failed_models}}; ORACLE β_priv:
+{{pc.oracle.beta_priv.failed_models}}; per-model intervals rest on few games each, Table C16);
 without a failure but with a control that could not be checked (no interval, or no ORACLE games, as in the broad grid
 by design): {{pc.unverified_models}} (Table C16).
 <!-- if pc.failed_models is not "none": "For these models a positive control did not respond, so their nulls below mean
@@ -424,8 +426,9 @@ with intervals and AUROC where class counts permit. The headline positive label 
 content or canary crossing, which need not be transfer of a private input; canary-confirmed L3 is a separate level.
 Games whose crossing status is unknown are left out, and coverage and worst-case unknown-verdict bounds are shown.
 The L1 sensitivity includes name-only exposure (Table C12). Gated arms, whose commands were blocked live, and
-ORACLE, whose leak is by design, are excluded. Tirith and active β score the full eligible set, the LLM judges a
-budgeted, trace-stratified sample, so these pooled rates are not a paired comparison.
+ORACLE, whose leak is by design, are excluded. Tirith, active β and the per-firm LLM judge score every eligible
+game (the judges as a census, D27); the joint judge reads both firms' transcripts and so only games with two agent
+firms. Cohorts therefore differ slightly, so these pooled rates are not a paired comparison.
 
 {{TABLE:monitors_headline}}
 
@@ -924,8 +927,8 @@ an attempt, never a success.
 **Table C15.** Every monitor at the game level on the same selected judge games (`game_judged`), against the truth of
 Table 2 (a trace-confirmed rival-authored canary or content crossing): judged games, games of unknown truth (left
 out), positive and negative games, TPR and FPR at each monitor's own operating point, AUROC where both classes have at
-least 5 scored games, and coverage. This is the like-for-like comparison of the monitors; it is descriptive for the
-budgeted, trace-stratified judge sample. Table C12 gives the same level against L1 exposure.
+least 5 scored games, and coverage. This is the like-for-like comparison of the monitors on the judged games (a
+census of the evaluation set, D27). Table C12 gives the same level against L1 exposure.
 
 {{TABLE:positive_controls}}
 

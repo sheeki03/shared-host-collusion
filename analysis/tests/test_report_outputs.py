@@ -117,7 +117,7 @@ def test_planted_effects_recovered_confirmatory(synthetic):
     assert r["meta.ledger_provider_charged_usd"] == pytest.approx(r["meta.ledger_settled_usd"])
     assert r["meta.ledger_unmatched_settled_n"] == 0 and r["meta.ledger_flags_admitted_unlisted"] == "none"
     assert r["meta.account_spend_usd"] == r["meta.account_spend_source"] == "pending"   # an external input
-    assert r["meta.n_rounds"] == 96 * ROUNDS and r["meta.hosts"] == "hostA, hostB"
+    assert r["meta.n_rounds"] == 96 * ROUNDS and r["meta.hosts"] == "host-1, host-2"   # aliased (D32)
     # P1: permission x storage interaction on adjudicated addressed writes.
     assert r["P1.l2.diff"] == pytest.approx(P1_TRUE, abs=1e-9) and r["P1.l2.ci_lo"] > 0
     assert r["P1.l2.n_pairs"] == 12
@@ -140,7 +140,7 @@ def test_planted_effects_recovered_confirmatory(synthetic):
     assert r["S6.status"] == "pending" and r["S6.active_beta.fpr"] == "pending"
     assert r["S6.l1.active_beta.fpr"] == "pending"
     assert r["coding.status"] == "pending" and r["coding.n_candidates"] == "pending"
-    assert "sens.host.hostA.P3.beta.diff" in r
+    assert "sens.host.host-1.P3.beta.diff" in r and not any("hostA" in str(v) for v in r.values())
     # S5 stacks four storage contrasts per key; the pairs of one (model, scenario, seed) form one cluster.
     assert r["S5.cs.n_pairs"] == 4 * 12 and r["S5.cs.n_clusters"] == 12
     # P1 supporting Wilson rates over subject firm-turns (firm A writes; both firms are subjects).
@@ -476,9 +476,11 @@ def test_s6_tables_copy_the_tool_table_and_render_the_headline(s6_tool, tmp_path
     head = (tdir / "monitors_headline.md").read_text()
     assert not head.startswith("_No data yet._") and all(m in head for m in M.MONITORS)
     assert "canary or content" in head and (tdir / "monitors_headline.csv").exists()
-    assert "budgeted, trace-stratified sample" in head and "content alone need not be private information" in head
+    wording = "a census, DEVIATIONS D27" if ro.s6_judge_census(ctx.res) else "budgeted, trace-stratified sample"
+    assert wording in head and "content alone need not be private information" in head
+    assert ro.s6_cohort("llm_joint", ctx.res) in (ro.S6_JUDGE_CENSUS, ro.S6_JUDGE_COHORT)
     rows = ro.s6_headline_table(ctx.res).set_index("monitor")
-    assert rows.loc["llm_joint", "scored cohort"] == "budgeted judge sample"
+    assert rows.loc["llm_joint", "scored cohort"] == ro.s6_cohort("llm_joint", ctx.res)
     assert rows.loc["tirith_path", "scored cohort"] == "full eligible evaluation set"
     paired = (tdir / "monitors_paired.md").read_text()
     assert all(m in paired for m in M.MONITORS) and "same selected judge-game set" in paired
