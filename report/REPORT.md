@@ -660,7 +660,8 @@ chat arms and PROVOC; the pairs grid adds ORACLE and PROVOC-GATE-TOLD.
 
 {{TABLE:models}}
 
-**Table C3.** Per model configuration (core games): grid, effort, games, cost, parse failures, Δp, the share of
+**Table C3.** Per model configuration (core games): grid, effort, games, recorded model-call cost (including
+conservative estimates; Appendix E), parse failures, Δp, the share of
 verified games with an L1 event, unknown games, and the within-model P3 contrast.
 
 {{TABLE:s3_variants}}
@@ -705,7 +706,8 @@ in Section 4, name-exposure crossing rates in Table C1 and the game-fixed-effect
 
 {{TABLE:costs}}
 
-**Table C9.** Model cost by configuration and grid, from the reconciled budget ledgers.
+**Table C9.** Recorded model-call costs by configuration and grid, reconciled to the budget ledgers and including
+conservative estimates where final provider charges were unavailable (Appendix E).
 
 {{TABLE:exclusions}}
 
@@ -788,7 +790,12 @@ public-bulletin access. Nothing is ranked by how interesting its content is.
 
 ## Appendix E. Reproducibility
 
-**Costs.** Calls in the analysed games cost ${{meta.total_cost_usd}}; the game ledgers settled ${{meta.ledger_settled_usd}}, of which ${{meta.ledger_full_reservation_usd}} was charged at the full reservation because no provider cost was returned (an upper bound); the provider account spent ${{meta.account_spend_usd}} over the collection window, classifiers, judges and extensions included ({{meta.account_spend_source}}).
+**Costs.** Recorded model-call costs in the analysed games totalled ${{meta.total_cost_usd}}, including conservative
+estimates where final provider charges were unavailable. The game ledgers settled ${{meta.ledger_settled_usd}},
+including ${{meta.ledger_full_reservation_usd}} booked at the full reservation for calls without a returned charge.
+These are separate accounting scopes; neither establishes the provider account's confirmed bill. Actual account
+usage over the collection window was ${{meta.account_spend_usd}}, classifiers, judges and extensions included
+({{meta.account_spend_source}}).
 
 **Pilot (25 Oct, seeds 9000+).** Pilot seeds 9000+ covered 14 model probes and 28 smoke games. Probe agents accessed scratch in 176/315 commands;
 SHR-AWARE rival content appeared in 4/130 firm-rounds, so conditional levers were not triggered. In one five-round

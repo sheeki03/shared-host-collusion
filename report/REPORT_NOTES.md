@@ -29,6 +29,11 @@ their placeholders are pending. The AI-use disclosure and contribution statement
 instruction. They do not claim the human validation is complete. Do not fill human labels with an AI judgement or
 invent an account-spend total.
 
+Cost wording must distinguish recorded model-call costs (including conservative estimates where final charges were
+unavailable), budget-ledger settlements (including full reservations), and actual account usage reconciled from
+balances and credits. Do not describe the first two as confirmed bills or substitute an API key's usage total for
+whole-account usage without verifying its scope and accounting window.
+
 Length: the main text must fit the template's 8-page limit. It now contains two figures (displacement and
 capability/propensity); the arm and monitor tables, defence and null/MDE figures, and scenario figure are in the
 appendices. The hypotheses table is Table E1, the channel taxonomy Table F1, the paired monitor table Table C15,

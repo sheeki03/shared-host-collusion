@@ -2483,8 +2483,9 @@ DECLARED_FLAG_RE = re.compile(r"transport_error:.+|missing_cost:http_(?:429|5\d\
 # at the reported charge, above the reservation, and is never admitted.
 FULL_RESERVATION_FLAGS = ("transport_error", "missing_cost", "aborted", "invalid_cost")
 COST_SCOPE = (
-    "Three cost quantities, reported separately and never added: (1) meta.total_cost_usd, the provider charges saved "
-    "in the analysed complete games (equal to meta.cost_kept_games_usd when meta.ledger_reconciled; meta.cost_all_usd "
+    "Three cost quantities, reported separately and never added: (1) meta.total_cost_usd, the recorded model-call "
+    "costs in the analysed complete games, including conservative estimates when final charges were unavailable "
+    "(equal to meta.cost_kept_games_usd when meta.ledger_reconciled; meta.cost_all_usd "
     "adds the saved attempts of dropped, superseded and excluded samples); (2) meta.ledger_settled_usd, every "
     "settlement in the deduplicated game ledgers (copies sharing a ledger ID read once; open reservations are never "
     "spend), split into meta.ledger_full_reservation_usd (settled at the full reservation because no provider cost "
@@ -2851,7 +2852,8 @@ def summary(res: dict, tabs: dict[str, pd.DataFrame]) -> str:
              f"{f('meta.ledger_reconciled')}); (2) deduplicated ledger settlements ${f('meta.ledger_settled_usd')}, of "
              f"which ${f('meta.ledger_full_reservation_usd')} at the full reservation "
              f"({f('meta.ledger_full_reservation_n')} flagged attempts, no provider cost) and "
-             f"${f('meta.ledger_provider_charged_usd')} at a provider cost; ${f('meta.ledger_unmatched_settled_usd')} "
+             f"${f('meta.ledger_provider_charged_usd')} at a provider-reported or estimated cost; "
+             f"${f('meta.ledger_unmatched_settled_usd')} "
              f"is in no saved call (${f('meta.ledger_unmatched_analysed_games_usd')} of it on analysed games: "
              f"unfinished earlier attempts); (3) account-balance spend "
              f"${f('meta.account_spend_usd')} ({res.get('meta.account_spend_source', PENDING)}). Retired-ledger open "
