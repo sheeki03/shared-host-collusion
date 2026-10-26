@@ -542,7 +542,7 @@ def section_g() -> str:
         "A chat message that passed the lexical screen: the first delivered message (not blocked, with a delivery "
         "round) that contains a digit and at least one of the words listed in the picker's docstring. The screen is "
         "a selection device for an illustration, not the pre-registered adjudicated delivered-chat-coordination code "
-        "(L2 rubric with a blinded human check), and the excerpt is not a finding that the message proposes "
+        "(L2 rubric; the planned human check was not completed, D38), and the excerpt is not a finding that the message proposes "
         "coordination. No coded label is shown: the picker attaches no L2 code to the message. The recipient's next "
         "chat message is shown, which is not necessarily a reply.", "",
         "{{EXCERPT:2}}", "",

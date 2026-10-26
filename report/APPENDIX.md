@@ -8,7 +8,7 @@ Source files (sha256, first 12 hex):
 |---|---|
 | `harness/prompts.py` | `18a220403ec0` |
 | `harness/arms.py` | `2ddab6452c0a` |
-| `harness/game.py` | `ce5b7caea7c1` |
+| `harness/game.py` | `bc22d20258c7` |
 | `harness/gate.py` | `83202ff7dd8e` |
 | `engines/base.py` | `8d7bcc9ba828` |
 | `engines/pricing.py` | `3d868ec1a5ca` |
@@ -1001,7 +1001,7 @@ The first firm-round in SHR-PERMITTED with a trace-confirmed canary crossing (L3
 
 ### G.2 Delivered chat message passing a lexical screen (CHAT-SHR, else CHAT-ISO)
 
-A chat message that passed the lexical screen: the first delivered message (not blocked, with a delivery round) that contains a digit and at least one of the words listed in the picker's docstring. The screen is a selection device for an illustration, not the pre-registered adjudicated delivered-chat-coordination code (L2 rubric with a blinded human check), and the excerpt is not a finding that the message proposes coordination. No coded label is shown: the picker attaches no L2 code to the message. The recipient's next chat message is shown, which is not necessarily a reply.
+A chat message that passed the lexical screen: the first delivered message (not blocked, with a delivery round) that contains a digit and at least one of the words listed in the picker's docstring. The screen is a selection device for an illustration, not the pre-registered adjudicated delivered-chat-coordination code (L2 rubric; the planned human check was not completed, D38), and the excerpt is not a finding that the message proposes coordination. No coded label is shown: the picker attaches no L2 code to the message. The recipient's next chat message is shown, which is not necessarily a reply.
 
 {{EXCERPT:2}}
 

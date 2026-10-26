@@ -245,3 +245,30 @@ Open reservations on a ledger not passed as `--retired-ledger` fail a confirmato
 
 `analysis.report_outputs --preliminary` (same `--logs` and ledgers, no labels needed) reports whatever games are
 complete and never claims a result.
+
+## Submission package and final review
+
+The finalisation changes are recorded in D37–D39. D38 explicitly records that the planned human validation was
+not completed. The separate 100-item AI review is reported as AI-to-classifier agreement on the frozen balanced
+sample; it does not replace human validation, change the original labels, or resolve the primary unknown-label
+blocks. Account-wide balance reconciliation is deferred. The report distinguishes recorded accounting costs,
+conservative estimates and retry reservations from the separate, date-windowed API-key usage receipt.
+
+With the private analysis inputs available, the final review inputs and report can be rebuilt without model calls:
+
+```bash
+tools/final_analysis.sh review_inputs merge fill
+.venv/bin/python tools/check_claims.py --results runs/analysis/final/results.json
+```
+
+`tools/prepare_submission_docs.py` packages the filled report in the official template, retaining the prose and
+redacted excerpts and providing long or wide tables in full as supplementary Markdown/CSV. It requires Pandoc and
+a Python environment with `python-docx` and `lxml`, plus a local Word export of the official template. The release
+gate accepts only resolved report fields and a clean committed statistical analysis, with either completed human
+validation/account reconciliation or the explicitly disclosed D38 alternatives and their evidence. Use `--draft`
+only for provisional layout checks. Inspect the rendered PDF before uploading or importing the DOCX into Google
+Docs; pagination can change on import. The older `tools/export_docx.sh` is a raw preview exporter.
+
+Private transcripts, classifier keys, individual review sheets, provider diagnostics and local host configuration
+are not submission data. The public supplementary tables contain aggregate/game-level research results and
+redacted evidence only; the raw-log release decision remains deferred.

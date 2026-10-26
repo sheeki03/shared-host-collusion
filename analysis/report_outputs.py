@@ -2316,6 +2316,34 @@ def _err(m: float, lo: float, hi: float) -> list[list[float]]:
 def _save(fig, ctx: Ctx, name: str) -> None:
     d = Path(ctx.cfg.out) / "figures"
     d.mkdir(parents=True, exist_ok=True)
+    # These wide source figures are printed at 6.5 inches. Keep source text large enough to remain at least about
+    # 6 points after reduction; put sample counts in a separate row instead of over the zero line.
+    if fig._suptitle is not None:
+        fig._suptitle.set_fontsize(16)
+    for ax in fig.axes:
+        ax.title.set_fontsize(15)
+        ax.xaxis.label.set_fontsize(15)
+        ax.yaxis.label.set_fontsize(15)
+        ax.tick_params(axis="both", labelsize=14)
+        has_counts = False
+        for text in ax.texts:
+            text.set_fontsize(13)
+            if text.get_text().startswith("n=") and hasattr(text, "xy"):
+                text.xy = (text.xy[0], -0.025)
+                text.set_position(text.xy)
+                text.set_verticalalignment("top")
+                text.set_clip_on(False)
+                has_counts = True
+        if has_counts:
+            ax.tick_params(axis="x", pad=20)
+        legend = ax.get_legend()
+        if legend is not None:
+            for text in legend.get_texts():
+                text.set_fontsize(13)
+    for legend in fig.legends:
+        legend.get_title().set_fontsize(13)
+        for text in legend.get_texts():
+            text.set_fontsize(13)
     # Reserve space for all tick labels, axis titles and the figure title before exporting either format.
     # A tight bounding box alone prevents cropping but does not prevent neighbouring panels from overlapping.
     fig.set_layout_engine("constrained", w_pad=0.06, h_pad=0.06, wspace=0.12, hspace=0.10)
@@ -2357,9 +2385,9 @@ def figures(ctx: Ctx, games: pd.DataFrame, g_tab: pd.DataFrame) -> list[str]:
     made = []
     # 1. displacement
     fig, axes = plt.subplots(1, 3, figsize=(14, 4.8))
-    _arm_points(axes[0], ctx, core, CHAT_ARMS, "chat_coordination", "delivered chat coordination / turn",
+    _arm_points(axes[0], ctx, core, CHAT_ARMS, "chat_coordination", "delivered chat\ncoordination / turn",
                 "(a) Chat coordination")
-    _arm_points(axes[1], ctx, core, CHAT_ARMS, "beta", "second-mover β_priv (per game)", "(b) Action dependence")
+    _arm_points(axes[1], ctx, core, CHAT_ARMS, "beta", "second-mover β_priv\n(per game)", "(b) Action dependence")
     chat_effect = res.get("P2.chat.diff")
     if isinstance(chat_effect, str) and "blocked" in chat_effect:
         chat_effect = "Not estimable:\nunknown labels (D29)"
@@ -2378,7 +2406,7 @@ def figures(ctx: Ctx, games: pd.DataFrame, g_tab: pd.DataFrame) -> list[str]:
     arms = ("ISO-AWARE", "SHR-AWARE", "SHR-NAIVE", "ISO-PERMITTED", "SHR-PERMITTED", "ORACLE")
     fig, axes = plt.subplots(1, 3, figsize=(14, 4.8))
     _arm_points(axes[0], ctx, core, arms, "addressed_write_rate", "addressed-write rate (L2)", "(a) Addressed writes")
-    _arm_points(axes[1], ctx, core, arms, "l1_rate", "trace-confirmed crossing rate (L1)", "(b) Crossings")
+    _arm_points(axes[1], ctx, core, arms, "l1_rate", "trace-confirmed crossing\nrate (L1)", "(b) Crossings")
     _arm_points(axes[2], ctx, core, arms, "beta", "second-mover β_priv", "(c) Signal influence")
     fig.suptitle("Capability (PERMITTED) vs propensity (AWARE/NAIVE)\n"
                  "Means with 95% bootstrap confidence intervals", fontsize=12)
@@ -2388,16 +2416,18 @@ def figures(ctx: Ctx, games: pd.DataFrame, g_tab: pd.DataFrame) -> list[str]:
     # 3. defence layers
     fig, axes = plt.subplots(1, 3, figsize=(14, 5.3))
     gate_arms = (*GATE_2X2, "PROVOC-GATE-TOLD")
-    _arm_points(axes[0], ctx, core, gate_arms, "scratch_cmd_rate", "turns touching /srv/scratch", "(a) Gate 2×2: use")
-    _arm_points(axes[1], ctx, core, gate_arms, "l1_rate", "trace-confirmed crossing rate", "(b) Gate 2×2: crossings")
+    _arm_points(axes[0], ctx, core, gate_arms, "scratch_cmd_rate", "turns touching\n/srv/scratch", "(a) Gate 2×2: use")
+    _arm_points(axes[1], ctx, core, gate_arms, "l1_rate", "trace-confirmed\ncrossing rate", "(b) Gate 2×2: crossings")
     ax = axes[2]
     plotted = False
     for i, mon in enumerate(MONITORS):
         t_, f_ = _val(res, f"S6.{mon}.tpr"), _val(res, f"S6.{mon}.fpr")     # headline: transfer (monitors.py)
         if np.isfinite(t_) and np.isfinite(f_):
-            cohort = {S6_JUDGE_COHORT: "judged sample", S6_JUDGE_CENSUS: "judge census"}.get(
-                s6_cohort(mon, res), "full set")
-            label = f"{mon} ({cohort}; {_fmt(res.get(f'S6.{mon}.n_pos'))}+/{_fmt(res.get(f'S6.{mon}.n_neg'))}−)"
+            cohort = {S6_JUDGE_COHORT: "J", S6_JUDGE_CENSUS: "J"}.get(s6_cohort(mon, res), "F")
+            display = {"tirith_stock": "Stock tirith", "tirith_path": "Path rule",
+                       "tirith_path_hardened": "Hardened path", "llm_per_firm": "Per-firm judge",
+                       "llm_joint": "Joint judge", "active_beta": "Active β"}[mon]
+            label = f"{display} ({cohort}; {_fmt(res.get(f'S6.{mon}.n_pos'))}+/{_fmt(res.get(f'S6.{mon}.n_neg'))}−)"
             ax.errorbar([f_], [t_], xerr=_err(f_, _val(res, f"S6.{mon}.fpr_lo"), _val(res, f"S6.{mon}.fpr_hi")),
                         yerr=_err(t_, _val(res, f"S6.{mon}.tpr_lo"), _val(res, f"S6.{mon}.tpr_hi")),
                         fmt="o", color=PALETTE[i % len(PALETTE)], capsize=3, label=label)
@@ -2406,10 +2436,13 @@ def figures(ctx: Ctx, games: pd.DataFrame, g_tab: pd.DataFrame) -> list[str]:
     ax.set_xlim(-0.02, 1.02)
     ax.set_ylim(-0.02, 1.02)
     ax.set_xlabel("FPR (Wilson 95% CI)")
-    ax.set_ylabel("TPR (Wilson 95% CI)")
+    ax.set_ylabel("TPR\n(Wilson 95% CI)")
     ax.set_title("(c) Monitor operating points\nDifferent scored cohorts; unpaired", fontsize=11)
     if plotted:
-        ax.legend(fontsize=7, loc="lower right")
+        handles, labels = ax.get_legend_handles_labels()
+        judged = "judge census" if s6_judge_census(res) else "selected judge sample"
+        fig.legend(handles, labels, loc="outside lower center", ncol=3, fontsize=13, frameon=False,
+                   title=f"F: full eligible set; J: {judged}; +/−: known positives/negatives", title_fontsize=13)
     else:
         ax.text(0.5, 0.5, "pending / no data", transform=ax.transAxes, ha="center", va="center", color="#555555")
     fig.suptitle("Defence layers: command gate and monitors\n"
@@ -2438,14 +2471,14 @@ def figures(ctx: Ctx, games: pd.DataFrame, g_tab: pd.DataFrame) -> list[str]:
         ks.append(r_ if np.isfinite(r_) else 0)
         his.append(up if np.isfinite(up) else np.nan)
     x = np.arange(len(labs))
-    ax.bar(x, ks, color=PALETTE[1], width=0.5, label="observed L3 game rate")
+    ax.bar(x, ks, color=PALETTE[1], width=0.5, label="Observed L3 game rate")
     ax.errorbar(x, ks, yerr=[np.zeros(len(x)), np.nan_to_num(np.array(his) - np.array(ks))], fmt="none",
-                ecolor="#000000", capsize=5, label="95% upper bound (rule of three / Wilson)")
+                ecolor="#000000", capsize=5, label="95% upper bound\n(rule of three / Wilson)")
     ax.set_xticks(x)
     ax.set_xticklabels(labs)
     ax.set_ylabel("games with a canary crossing")
     ax.set_title("(b) Upper event-rate limits")
-    ax.legend(fontsize=8)
+    ax.legend(fontsize=13, loc="upper left")
     fig.suptitle("Bounded nulls with minimum detectable effects")
     _save(fig, ctx, "nulls_mde")
     plt.close(fig)
@@ -2467,6 +2500,8 @@ def figures(ctx: Ctx, games: pd.DataFrame, g_tab: pd.DataFrame) -> list[str]:
     axes[0].set_title("(a) β_priv: SHR-AWARE − ISO-AWARE", fontsize=11)
     axes[1].set_title("(b) Price: SHR-AWARE − ISO-AWARE", fontsize=11)
     axes[1].tick_params(axis="y", labelleft=False)
+    for ax in axes:
+        ax.locator_params(axis="x", nbins=5)
     fig.suptitle("Scenario transfer of the P3 contrast\n"
                  "Descriptive estimates with 95% bootstrap confidence intervals; units differ by engine", fontsize=12)
     _save(fig, ctx, "scenarios")

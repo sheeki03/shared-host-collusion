@@ -77,7 +77,7 @@ def table_rows(text: str) -> list[list[str]]:
     return rows
 
 
-def external_tables(text: str, source: str, tables: Path, out: Path) -> tuple[str, list[dict]]:
+def external_tables(text: str, source: str, tables: Path, out: Path, tables_url: str | None = None) -> tuple[str, list[dict]]:
     """Preserve only explicitly cited generated tables; select print placement without changing values."""
     records = []
     for name in dict.fromkeys(re.findall(r"\{\{TABLE:([^}]+)\}\}", source)):
@@ -99,11 +99,16 @@ def external_tables(text: str, source: str, tables: Path, out: Path) -> tuple[st
         with csv_path.open("w", newline="") as f:
             csv.writer(f).writerows(rows)
         if moved:
-            note = (f"The complete table is supplied as **tables/{name}.md** and **tables/{name}.csv** in the "
-                    f"accompanying table archive ({max(0, len(rows)-1):,} data rows, {ncol} columns). "
-                    "All values are retained there at their generated precision.")
+            if tables_url:
+                base = tables_url.rstrip("/")
+                note = (f"The complete table is available as [{name} (Markdown)]({base}/{name}.md) and "
+                        f"[{name} (CSV)]({base}/{name}.csv), and in the accompanying table archive. "
+                        "All values are retained there at their generated precision.")
+            else:
+                note = (f"The complete table is supplied as **tables/{name}.md** and **tables/{name}.csv** in the "
+                        "accompanying table archive. All values are retained there at their generated precision.")
             text = text.replace(body, note)
-        records.append({"name": name, "data_rows": max(0, len(rows)-1), "columns": ncol,
+        records.append({"name": name, "rows_including_headers": len(rows), "columns": ncol,
                         "placement": "external table archive" if moved else "supplement and table archive",
                         "markdown_sha256": digest(target), "csv_sha256": digest(csv_path)})
     return text, records
@@ -119,7 +124,7 @@ def remove_theme_font(run) -> None:
                 del rf.attrib[k]
 
 
-def format_docx(path: Path, *, supplement: bool = False) -> None:
+def format_docx(path: Path, *, supplement: bool = False, combined: bool = False) -> None:
     """Use the official template's page and type system, with readable research tables and figures."""
     from docx import Document
     from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
@@ -173,6 +178,8 @@ def format_docx(path: Path, *, supplement: bool = False) -> None:
         if text == "References":
             in_references = True
             p.paragraph_format.page_break_before = False
+        if combined and text.startswith("Appendix A."):
+            p.paragraph_format.page_break_before = True
         if text in ("Code and Data", "Supplementary material", "LLM Usage Statement"):
             in_references = False
         if p.style.name == "Source Code":
@@ -196,9 +203,10 @@ def format_docx(path: Path, *, supplement: bool = False) -> None:
                 run.font.size = Pt(9)
         if p._p.xpath(".//w:drawing"):
             p.paragraph_format.keep_with_next = True
-    # Figures fit the printable width, bounded in height so figure and caption can share a page.
+    # Figures fit the printable width. A taller appendix figure must retain readable labels; the two main figures
+    # are wide enough that this height cap does not alter their page budget.
     for shape in doc.inline_shapes:
-        factor = min(1, Inches(6.5)/shape.width, Inches(2.7)/shape.height)
+        factor = min(1, Inches(6.5)/shape.width, Inches(4.0)/shape.height)
         shape.width, shape.height = int(shape.width*factor), int(shape.height*factor)
     for table in doc.tables:
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -327,6 +335,7 @@ def main() -> None:
     ap.add_argument("--template", type=Path, required=True)
     ap.add_argument("--out-dir", type=Path, required=True)
     ap.add_argument("--pandoc", default="pandoc")
+    ap.add_argument("--tables-url", help="Published directory URL for complete Markdown/CSV tables")
     ap.add_argument("--draft", action="store_true", help="Allow pending fields; filenames identify draft status")
     a = ap.parse_args()
     text = a.report.read_text()
@@ -334,7 +343,7 @@ def main() -> None:
     if not a.draft:
         validate_final_inputs(results, text)
     a.out_dir.mkdir(parents=True, exist_ok=True)
-    printed, records = external_tables(text, a.source.read_text(), a.results_dir / "tables", a.out_dir)
+    printed, records = external_tables(text, a.source.read_text(), a.results_dir / "tables", a.out_dir, a.tables_url)
     # The source uses familiar plain-text exponent notation. Pandoc requires a closing caret or it can consume the
     # fraction's intervening text as one superscript. Delimit only these known price-benchmark superscripts.
     printed = re.sub(r"p̄\^([NM])(?!\^)", r"p̄^\1^", printed)
@@ -342,14 +351,13 @@ def main() -> None:
     llm = printed.find("## LLM Usage Statement")
     if start < 0 or llm < start:
         raise SystemExit("Expected Appendix A and final LLM Usage Statement sections")
-    main_text = printed[:start].rstrip() + "\n\n" + printed[llm:].strip() + "\n\n## Supplementary material\n\n" \
-        "Appendices A–H, including the redacted transcript excerpts, accompany this manuscript in the supplement. " \
-        "Long and wide tables are provided in full as Markdown and CSV in the table archive; no report values are " \
-        "removed from that archive.\n"
+    main_text = printed[:start].rstrip() + "\n\n" + printed[llm:].strip() + "\n\n" \
+        "**Supplement:** Appendices A–H and redacted excerpts are in the supplement. Complete generated tables " \
+        "are provided in the accompanying table archive.\n"
     supplement = "# Shared Host Collusion Supplementary Material\n\n" + printed[start:llm].strip() + "\n"
     ending = ".draft" if a.draft else ""
     files = []
-    for stem, content in (("MANUSCRIPT", main_text), ("SUPPLEMENT", supplement)):
+    for stem, content in (("MANUSCRIPT", main_text), ("SUPPLEMENT", supplement), ("REPORT", printed)):
         md = a.out_dir / f"{stem}{ending}.md"
         md.write_text(content)
         out = md.with_suffix(".docx")
@@ -357,14 +365,15 @@ def main() -> None:
                         "--to", "docx", "--resource-path", f"{a.report.parent.resolve()}:{a.results_dir.resolve()}",
                         "--reference-doc", str(a.template.resolve()), "-o", str(out)], check=True)
         preserve_template_package(out, a.template, a.pandoc)
-        format_docx(out, supplement=stem == "SUPPLEMENT")
+        format_docx(out, supplement=stem == "SUPPLEMENT", combined=stem == "REPORT")
         files.append(out.name)
     (a.out_dir / "TABLES_README.md").write_text(
         "# Complete generated tables\n\nThese tables accompany the manuscript and supplement. Each cited generated "
         "table is retained in Markdown and CSV. Long or wide tables are referenced from the supplement rather than "
         "compressed into unreadable print cells. Raw transcripts, human-check data, and attempt-level provider "
         "diagnostics are not included. The Markdown is authoritative for formatting and notes; CSV contains table "
-        "cells.\n\n" + "\n".join(f"- {r['name']}: {r['data_rows']} rows, {r['columns']} columns; {r['placement']}"
+        "cells, including any repeated headers when a source contains multiple tables.\n\n" + "\n".join(
+            f"- {r['name']}: {r['rows_including_headers']} rows including headers, up to {r['columns']} columns; {r['placement']}"
                                      for r in records) + "\n")
     with ZipFile(a.out_dir / f"TABLES{ending}.zip", "w", ZIP_DEFLATED) as z:
         z.write(a.out_dir / "TABLES_README.md", "README.md")
@@ -378,6 +387,7 @@ def main() -> None:
                 "human_review_status": results.get("review.human.status", "human check reported"),
                 "ai_review_status": results.get("review.ai.status", "not separately reported"),
                 "account_reconciliation_status": results.get("review.account.status", "reconciled amount reported"),
+                "published_tables_url": a.tables_url,
                 "format": "Apart Letter 1in; Old Standard TT 11pt body; 14pt section headings; visual QA required"}
     (a.out_dir / "package_manifest.json").write_text(json.dumps(manifest, indent=2)+"\n")
     print(json.dumps({"documents": files, "external_tables": sum(r['placement'].startswith('external') for r in records)}, indent=2))

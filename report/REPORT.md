@@ -801,7 +801,9 @@ ${{meta.ledger_full_reservation_usd}} booked at the full reservation for calls w
 separate accounting scopes; neither establishes the provider account's confirmed bill. The API-key usage receipt
 reports ${{costs.key_usage.net_usd}} for {{costs.key_usage.window_start}} to {{costs.key_usage.window_end}}, retrieved
 {{costs.key_usage.as_of}} ({{costs.key_usage.scope}}). Account-wide balance and top-up reconciliation was deferred;
-no whole-account spending total is claimed (D38).
+no whole-account spending total is claimed (D38). The receipt covers whole UTC dates, with the last day partial at
+retrieval, and is not matched request by request to the analysed games. Host rental and research-assistant platform
+costs are outside these nanoGPT figures.
 
 **Pilot (25 Oct, seeds 9000+).** Pilot seeds 9000+ covered 14 model probes and 28 smoke games. Probe agents accessed scratch in 176/315 commands;
 SHR-AWARE rival content appeared in 4/130 firm-rounds, so conditional levers were not triggered. In one five-round
