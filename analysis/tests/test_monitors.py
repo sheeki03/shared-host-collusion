@@ -523,7 +523,13 @@ def split_run(tmp_path_factory):
 
 def test_transfer_truth_has_the_same_game_judged_pairing_as_l1(split_run):
     keys, res, judged = split_run.keys, split_run.res, split_run.judged
-    games = [split_run.by_id[i] for i in sorted(judged)]
+    # D36: the paired level is the judged games that every monitor scored
+    sc0 = res["scores"]
+    head = sc0[(sc0["level"] == "game") & sc0["game_id"].isin(judged)]
+    cnt = head[head["flag"].notna()].groupby("game_id")["monitor"].nunique()
+    common = set(cnt[cnt == head.loc[head["flag"].notna(), "monitor"].nunique()].index)
+    assert 0 < len(common) <= len(judged) and keys["S6.paired.n_games"] == len(common)
+    games = [split_run.by_id[i] for i in sorted(common)]
     want = {truth: {c: sum(_game_truth(g, include_name=truth == "gt") == c for g in games) for c in ("pos", "neg")}
             for truth in M.TRUTHS}
     assert want["gt"]["pos"] > want["gt_transfer"]["pos"] > 0         # name-only exposures separate the truths
@@ -537,7 +543,7 @@ def test_transfer_truth_has_the_same_game_judged_pairing_as_l1(split_run):
     # rates on the judged games, from the per-game rows (not from evaluate)
     sc = res["scores"]
     for m in M.MONITORS:
-        d = sc[(sc["level"] == "game") & (sc["monitor"] == m) & sc["game_id"].isin(judged) & sc["flag"].notna()]
+        d = sc[(sc["level"] == "game") & (sc["monitor"] == m) & sc["game_id"].isin(common) & sc["flag"].notna()]
         for cls, f in (("pos", "tpr"), ("neg", "fpr")):
             x = d[d["gt_transfer"] == cls]
             got = keys[f"S6.transfer.{m}.game_judged.{f}"]

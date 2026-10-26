@@ -107,6 +107,8 @@ PREREG_EXCLUSION_PREFIXES = ("sample error", "parse-failure rate above")
 # Exclusions-table classes that are not exclusions of a game (DEVIATIONS D12; analysis/game_set.py)
 OUTSIDE_CLASS = "outside cohort (never included)"
 SUPERSEDED_CLASS = "superseded by complete rerun"
+MISSING_CLASS = "missing: no run completed (harness or provider error)"
+MISSING_PREFIX = "sample error"
 DUPLICATE_CLASS = "dropped duplicate (D12)"
 LOG_COPY_CLASS = "second copy of a log (ignored)"
 NOT_EXCLUSION_CLASSES = (OUTSIDE_CLASS, SUPERSEDED_CLASS, DUPLICATE_CLASS, LOG_COPY_CLASS)
@@ -323,7 +325,17 @@ def coverage(ctx: Ctx, t: dict[str, pd.DataFrame]) -> pd.DataFrame:
                 t[k] = t[k][~t[k]["game_id"].isin(extra)].reset_index(drop=True)
         complete -= extra
     live_ex = ex[~ex["class"].isin(NOT_EXCLUSION_CLASSES)] if not ex.empty else ex
+    # D36: a planned game no run completed (every attempt ended in a harness or provider error, re-run with the same
+    # seed as §5 prescribes) is missing, not an exclusion; only a complete game removed by a pre-registered rule (more
+    # than 20% unparsed steps) is excluded.
+    if not live_ex.empty:
+        errored = live_ex["reason"].astype(str).str.startswith(MISSING_PREFIX)
+        never = errored & ~live_ex["game_id"].isin(complete)
+        ex.loc[live_ex.index[never], "class"] = MISSING_CLASS
+        live_ex = ex[~ex["class"].isin(NOT_EXCLUSION_CLASSES)]
+    missing_ids = set(live_ex.loc[live_ex["class"] == MISSING_CLASS, "game_id"]) if not live_ex.empty else set()
     prereg_ids = set(live_ex.loc[live_ex["class"] == "prereg exclusion", "game_id"]) if not live_ex.empty else set()
+    prereg_ids -= missing_ids
     other = live_ex[live_ex["class"] == "other"] if not live_ex.empty else live_ex
     trimmed = set(ctx.cfg.trimmed)
     status = []
@@ -332,6 +344,8 @@ def coverage(ctx: Ctx, t: dict[str, pd.DataFrame]) -> pd.DataFrame:
             status.append("complete")
         elif s.game_id in prereg_ids:
             status.append("excluded")
+        elif s.game_id in missing_ids:
+            status.append("missing")
         elif trimmed & {s.scenario, s.arm, s.grid, s.model, s.game_id}:
             status.append("trimmed")
         elif not other.empty and s.game_id in set(other["game_id"]):
@@ -826,6 +840,12 @@ def primary(ctx: Ctx, games: pd.DataFrame, *, prefix: str = "", record: bool = T
     if not prefix:
         unknown_label_bounds(ctx, games, l2_unknown, chat_unknown)
         mde_and_bounds(ctx, core, p3)
+        # D36: L3 (rival-canary transfer) in SHR-AWARE over every scenario, not only the core game P3 uses
+        sa = games[games["arm"] == "SHR-AWARE"] if not games.empty else games
+        if "l3_any" in sa.columns:
+            put_trace_game_rate(ctx.res, "L3.game_rate_all_scenarios.SHR-AWARE", sa, "l3_any")
+            put_trace_rate(ctx.res, "L3.round_rate_all_scenarios.SHR-AWARE", k=int(sa["l3_rate_n_positive"].sum()),
+                           n_known=int(sa["l3_rate_n_known"].sum()), n_total=int(sa["n_agent_turns"].sum()))
     return out
 
 
@@ -861,6 +881,9 @@ def unknown_label_bounds(ctx: Ctx, games: pd.DataFrame, l2_unknown: bool, chat_u
         for k in [k for k in list(res) if k.startswith(("P1.l2", "P2.")) and not k.startswith("P2.chat.n_unknown")]:
             for tag in ("bound_lo", "bound_hi"):
                 res[f"{tag}.{k}"] = res[k]
+        for key, est in (("P1.l2", "P1.l2.diff"), ("P2.chat", "P2.chat.diff")):
+            res[f"{key}.unknown_range_lo"] = res[f"{key}.unknown_range_hi"] = res.get(est, INSUFFICIENT)
+        res["P1.l2.unknown_range_verdict"] = res["P2.unknown_range_verdict"] = "n/a (no unknown labels)"
         return
     for tag, sfx in (("bound_lo", "_lo"), ("bound_hi", "_hi")):
         g = games.copy()
@@ -900,6 +923,60 @@ def unknown_label_bounds(ctx: Ctx, games: pd.DataFrame, l2_unknown: bool, chat_u
     sb = [res.get(f"{b}.P2.supported_seedblock") for b in bounds]
     res["P2.supported_seedblock"] = BLOCKED if chat_unknown else (
         bool(all(sb)) if all(isinstance(v, bool) for v in sb) else INSUFFICIENT)
+    unknown_label_ranges(ctx, games)
+
+
+# Sign of each arm in the P1 interaction and the P2 chat contrast (stats.factorial_effect, stats.displacement_test).
+P1_SIGNS = {"SHR-PERMITTED": 1, "ISO-PERMITTED": -1, "SHR-AWARE": -1, "ISO-AWARE": 1}
+P2_CHAT_SIGNS = {"CHAT-MON-ISO": 1, "CHAT-MON-SHR": 1, "CHAT-ISO": -1, "CHAT-SHR": -1}
+RANGE_VERDICTS = ("not supported under any assignment of the unknown labels",
+                  "depends on the unknown labels")
+
+
+def unknown_label_ranges(ctx: Ctx, games: pd.DataFrame) -> None:
+    """DEVIATIONS D36. The bound_lo/bound_hi runs (every unknown counted as no, then as yes) are two imputations, not
+    bounds on a contrast whose arms enter with opposite signs. The sharp range of the point estimate over every
+    assignment of the unknown labels takes, per game, the rate with its unknowns as yes in arms of positive sign and as
+    no in arms of negative sign (the upper end), and the reverse (the lower end); the estimators are linear in the
+    game rates. P1 cannot be supported when its upper end is <= 0; P2 cannot be supported under any assignment when its
+    label-free storage interaction (β_priv) has a CI that includes 0, since P2 needs both parts."""
+    res = ctx.res
+    core = games[games["scenario"] == CORE].copy() if not games.empty else games
+
+    def filled(col: str, signs: dict[str, int], up: bool) -> pd.DataFrame:
+        g = core.copy()
+        for arm, sgn in signs.items():
+            src = f"{col}_hi" if (sgn > 0) == up else f"{col}_lo"
+            m = g["arm"] == arm
+            if src in g.columns:
+                g.loc[m, col] = g.loc[m, col].where(g.loc[m, col].notna(), g.loc[m, src])
+        return g
+
+    def p1_est(g: pd.DataFrame) -> float:
+        return float(stats.factorial_effect(g, "addressed_write_rate", treatment_t="SHR-PERMITTED",
+                                            treatment_c="ISO-PERMITTED", baseline_t="SHR-AWARE",
+                                            baseline_c="ISO-AWARE", n_boot=10, n_perm=10, seed=0).estimate)
+
+    def chat_est(g: pd.DataFrame) -> float:
+        return float(stats.displacement_test(g, storage_cols=("beta",), primary_storage_col="beta", n_boot=10,
+                                             n_perm=10, seed=0).chat_monitoring.estimate)
+
+    for key, col, signs, est in (("P1.l2", "addressed_write_rate", P1_SIGNS, p1_est),
+                                 ("P2.chat", "chat_coordination", P2_CHAT_SIGNS, chat_est)):
+        try:
+            res[f"{key}.unknown_range_lo"] = est(filled(col, signs, up=False))
+            res[f"{key}.unknown_range_hi"] = est(filled(col, signs, up=True))
+        except (ValueError, KeyError) as exc:
+            res[f"{key}.unknown_range_lo"] = res[f"{key}.unknown_range_hi"] = INSUFFICIENT
+            ctx.notes.append(f"unknown-label range {key}: {exc}")
+    hi = res.get("P1.l2.unknown_range_hi")
+    res["P1.l2.unknown_range_verdict"] = INSUFFICIENT if not isinstance(hi, float) else (
+        RANGE_VERDICTS[0] if hi <= 0 else RANGE_VERDICTS[1])
+    lo_ci = res.get("P2.storage.ci_lo")
+    hi_ci = res.get("P2.storage.ci_hi")
+    res["P2.unknown_range_verdict"] = INSUFFICIENT if not all(isinstance(v, float) for v in (lo_ci, hi_ci)) else (
+        RANGE_VERDICTS[0] + " (its label-free β_priv part was not detected)" if lo_ci <= 0 <= hi_ci
+        else RANGE_VERDICTS[1])
 
 
 def mde_and_bounds(ctx: Ctx, core: pd.DataFrame, p3) -> None:
@@ -2146,13 +2223,43 @@ def coverage_table(cov: pd.DataFrame) -> pd.DataFrame:
     if cov.empty:
         return cov
     piv = cov.groupby(["grid", "scenario", "arm", "status"]).size().unstack("status", fill_value=0).reset_index()
-    for c in ("complete", "excluded", "trimmed", "incomplete", "pending"):
+    cols = ("complete", "missing", "excluded", "trimmed", "incomplete", "pending")
+    for c in cols:
         if c not in piv.columns:
             piv[c] = 0
-    piv["expected"] = piv[["complete", "excluded", "trimmed", "incomplete", "pending"]].sum(axis=1)
+    piv["expected"] = piv[list(cols)].sum(axis=1)
     piv["coverage"] = piv["complete"] / piv["expected"]
-    return piv[["grid", "scenario", "arm", "expected", "complete", "excluded", "trimmed", "incomplete", "pending",
-                "coverage"]]
+    return piv[["grid", "scenario", "arm", "expected", *cols, "coverage"]]
+
+
+_PROVIDER_CODES = ("all_fallbacks_failed", "async_billing_reservation_failed", "too_many_concurrent_requests")
+
+
+def short_reason(reason: str) -> str:
+    """One line per reason for the report table: the exception class and any provider refusal code or HTTP status,
+    never the request text or error payload the full reason may quote (D36)."""
+    r = str(reason)
+    if not r.startswith(MISSING_PREFIX):
+        return r[:120]
+    m = re.match(r"sample error:\s*([A-Za-z_][\w.]*)", r)
+    kind = m.group(1) if m else "error"
+    code = next((c for c in _PROVIDER_CODES if c in r), None)
+    http = re.search(r"\b(?:HTTP|status(?: code)?|Error code:)\s*:?\s*(\d{3})\b", r)
+    return f"{kind}" + (f" ({code})" if code else f" (HTTP {http.group(1)})" if http else "")
+
+
+def not_analysed_table(cov: pd.DataFrame, ex: pd.DataFrame) -> pd.DataFrame:
+    """One row per planned game not analysed (missing or excluded), with its attempts and short reasons."""
+    if cov.empty:
+        return pd.DataFrame()
+    gone = cov[cov["status"].isin(["missing", "excluded"])]
+    rows = []
+    for g in gone.itertuples(index=False):
+        att = ex[(ex["game_id"] == g.game_id) & ~ex["class"].isin(NOT_EXCLUSION_CLASSES)] if not ex.empty else ex
+        reasons = sorted({short_reason(x) for x in att["reason"]}) if len(att) else ["not in logs"]
+        rows.append({"game_id": g.game_id, "model": g.model, "arm": g.arm, "seed": g.seed, "status": g.status,
+                     "attempts": int(len(att)), "reason": "; ".join(reasons)})
+    return pd.DataFrame(rows)
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -2610,6 +2717,7 @@ def run(cfg: Config) -> dict[str, Any]:
     res["meta.n_games"] = int(len(cov)) if has_design else int(len(games))
     res["meta.n_complete"] = int(len(games))
     res["meta.n_excluded"] = int((cov["status"] == "excluded").sum()) if not cov.empty else 0
+    res["meta.n_missing"] = int((cov["status"] == "missing").sum()) if not cov.empty else 0
     ex_ids = set(cov.loc[cov["status"] == "excluded", "game_id"]) if not cov.empty else set()
     ex_live = excl[excl["game_id"].isin(ex_ids) & (excl["class"] == "prereg exclusion")].drop_duplicates("game_id") \
         if not excl.empty and ex_ids else excl.iloc[:0]
@@ -2675,8 +2783,12 @@ def run(cfg: Config) -> dict[str, Any]:
     tabs["costs"] = costs_table(games)
     ex_tab = excl.assign(log=excl["log"].astype(str).map(game_set.short_log)) \
         if not excl.empty and "log" in excl.columns else excl
-    tabs["exclusions"] = ex_tab[[c for c in ("game_id", "grid", "model", "scenario", "arm", "seed", "class", "reason",
-                                             "log") if c in ex_tab.columns]] if not ex_tab.empty else pd.DataFrame()
+    # The report shows one row per planned game not analysed; every attempt (superseded, duplicate, errored), with
+    # its full reason and log, stays in tables/exclusions_attempts for audit and is not part of the report (D36).
+    tabs["exclusions_attempts"] = ex_tab[[c for c in ("game_id", "grid", "model", "scenario", "arm", "seed", "class",
+                                                      "reason", "log") if c in ex_tab.columns]] \
+        if not ex_tab.empty else pd.DataFrame()
+    tabs["exclusions"] = not_analysed_table(cov, excl)
     tabs["duplicates"] = t.get("duplicates", pd.DataFrame())
     tabs["coverage"] = coverage_table(cov)
     for name, df in tabs.items():
@@ -2720,7 +2832,8 @@ def summary(res: dict, tabs: dict[str, pd.DataFrame]) -> str:
     mode = "PRELIMINARY (not a confirmatory result)" if res.get("meta.preliminary") else "CONFIRMATORY"
     lines = [f"# Analysis summary: {mode}", "",
              f"- Cohort: {res.get('meta.cohort')}; complete games {f('meta.n_complete')} of {f('meta.n_games')} "
-             f"(coverage {f('meta.coverage')}); excluded {f('meta.n_excluded')}; trimmed {f('meta.n_trimmed')}; "
+             f"(coverage {f('meta.coverage')}); missing {f('meta.n_missing')}; excluded {f('meta.n_excluded')}; "
+             f"trimmed {f('meta.n_trimmed')}; "
              f"pending {f('meta.n_pending')}.",
              f"- Hosts: {res.get('meta.hosts')}. Freeze commit {res.get('meta.freeze_commit')}; analysis commit "
              f"{res.get('meta.analysis_commit')} (dirty: {f('meta.analysis_dirty')}).",

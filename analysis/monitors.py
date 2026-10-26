@@ -98,7 +98,7 @@ FIRMS = ("A", "B")
 RIVAL = {"A": "B", "B": "A"}
 LEVELS = ("firm_round", "game_firm", "game")
 HEADLINE_LEVEL = "game"
-JUDGED_LEVEL = "game_judged"          # game-level rows of every monitor on the judged games only (paired comparison)
+JUDGED_LEVEL = "game_judged"          # game-level rows on the judged games every monitor scored (paired comparison, D36)
 TRUTHS = ("gt", "gt_transfer")        # L1 exposure; transfer (canary or content), the headline truth (D7)
 CALIBRATION_ARMS = ("ISO-AWARE", "ISO-PERMITTED")
 EXCLUDED_ARMS = ("ORACLE",)
@@ -1139,7 +1139,14 @@ def score_all(games: Sequence[dict], *, out_dir: str | Path, judge_budget: float
         scores["weight"] = np.nan
     scores["weight"] = scores["weight"].where(scores["monitor"].str.startswith("llm_"), 1.0)
     judged = set(plan.loc[plan["selected"], "game_id"]) if len(plan) else set()
-    paired = scores[(scores["level"] == HEADLINE_LEVEL) & scores["game_id"].isin(judged)].assign(level=JUDGED_LEVEL)
+    head = scores[(scores["level"] == HEADLINE_LEVEL) & scores["game_id"].isin(judged)]
+    # D36: the paired level keeps only the judged games that every monitor scored (the joint judge reads only games
+    # with two agent firms, and a monitor may have no verdict for a game), so each comparison uses the same games.
+    scored_head = head[head["flag"].notna()]
+    n_mon = scored_head["monitor"].nunique()        # a monitor with no verdict on any judged game cannot be paired
+    per_game = scored_head.groupby("game_id")["monitor"].nunique()
+    common = set(per_game[per_game == n_mon].index)
+    paired = head[head["game_id"].isin(common)].assign(level=JUDGED_LEVEL)
     scored = pd.concat([scores, paired], ignore_index=True)
     metrics = evaluate(scored)
     transfer = evaluate(scored, gt_col="gt_transfer")
@@ -1153,6 +1160,13 @@ def score_all(games: Sequence[dict], *, out_dir: str | Path, judge_budget: float
              "S6.judge.model": JUDGE_MODEL, "S6.judge.rubric": RUBRIC_VERSION,
              "S6.judge.budget_usd": judge_budget,
              "S6.judge.n_games": int(plan["selected"].sum()) if len(plan) else 0,
+             "S6.paired.n_games": len(common),
+             **{f"S6.paired.{tag}n_{cls}_games": int((gtc[col] == cls).sum()) if len(gtc) else 0
+                for gtc in [game_truth(truth[truth["game_id"].isin(common)]) if len(truth) else truth]
+                for tag, col in (("", "gt"), ("transfer.", "gt_transfer")) for cls in ("pos", "neg", "unknown")},
+             "S6.gt.n_unknown_transfer_games": int((game_truth(truth)["gt_transfer"] == "unknown").sum())
+             if len(truth) else 0,
+             "S6.gt.n_pos_transfer_games": int((game_truth(truth)["gt_transfer"] == "pos").sum()) if len(truth) else 0,
              "S6.judge.est_selected_usd": plan.attrs.get("est_selected_usd") if len(plan) else 0.0,
              "S6.judge.est_full_grid_usd": plan.attrs.get("est_full_usd") if len(plan) else 0.0,
              "S6.judge.cost_usd": diag.get("judge", {}).get("cost_usd", 0.0),

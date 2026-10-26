@@ -516,12 +516,14 @@ def test_s6_denominators_and_paired_table_use_the_keys_monitors_writes(s6_tool, 
         assert r[f"S6.denom.{m}.judged.truth"].startswith("transfer")
         assert isinstance(r[f"S6.l1.{m}.game_judged.n_pos"], int)                   # the L1 level is kept apart
     assert r["S6.denom.tirith_path.n_games"] == r["S6.n_games"] == 20               # full eligible set
-    assert r["S6.denom.llm_joint.n_games"] == r["S6.denom.tirith_path.judged.n_games"] == r["S6.judge.n_games"]
+    assert r["S6.denom.llm_joint.n_games"] == r["S6.judge.n_games"]
+    # D36: the paired (judged) level is the judged games every monitor scored
+    assert r["S6.denom.tirith_path.judged.n_games"] == r["S6.paired.n_games"] <= r["S6.judge.n_games"]
     paired = ro.s6_paired_table(r).set_index("monitor")
     assert not (paired == "pending").any().any()
     for m in M.MONITORS:
         assert paired.loc[m, "pos"] == r[f"S6.{m}.game_judged.n_pos"]
-        assert paired.loc[m, "judged games"] == r["S6.judge.n_games"]
+        assert paired.loc[m, "judged games"] == r["S6.paired.n_games"]       # D36: games every monitor scored
     text = (tmp_path / "ro" / "tables" / "monitors_paired.md").read_text()
     assert not text.startswith("_No data yet._") and "as in `monitors_headline`" in text
     # a metrics file from another monitors run, or none, leaves the denominators pending (never a guess)
@@ -945,7 +947,11 @@ def test_d12_duplicates_superseded_and_unfinished_logs(tmp_path, monkeypatch):
     r = ro.run(ro.Config(**d.cfg, out=str(out)))
     # the first-finished copy of each duplicated game enters; complete games of non-success logs are admitted
     assert r["meta.n_duplicates_dropped"] == 3 and r["meta.n_superseded"] == 1
-    assert r["meta.n_complete"] == d.n_base and r["meta.n_excluded"] == 1 == r["meta.n_excluded_harness_error"]
+    # D36: a game no run completed (every attempt a harness error) is missing, not an exclusion
+    assert r["meta.n_complete"] == d.n_base and r["meta.n_missing"] == 1
+    assert r["meta.n_excluded"] == 0 == r["meta.n_excluded_harness_error"]
+    gone = pd.read_csv(out / "tables" / "exclusions.csv")
+    assert list(gone["status"]) == ["missing"] and "log" not in gone.columns
     assert r["meta.n_complete_from_unfinished_logs"] == 3            # X and Z from A, P from B
     dup = pd.read_csv(out / "tables" / "duplicates.csv").set_index("game_id")
     assert set(dup.index) == {ids["X"], ids["Y"], ids["Z"]}
@@ -955,10 +961,11 @@ def test_d12_duplicates_superseded_and_unfinished_logs(tmp_path, monkeypatch):
     games = pd.read_csv(out / "games.csv").set_index("game_id")
     assert games.loc[ids["X"], "log"].endswith("_A.eval") and games.loc[ids["Y"], "log"].endswith("_C.eval")
     assert games.loc[ids["P"], "log"].endswith("_B.eval") and ids["V"] not in games.index
-    ex = pd.read_csv(out / "tables" / "exclusions.csv")
+    ex = pd.read_csv(out / "tables" / "exclusions_attempts.csv")     # every attempt (D36); the report shows one row
     assert (ex["class"] == ro.DUPLICATE_CLASS).sum() == 3 and (ex["class"] == ro.SUPERSEDED_CLASS).sum() == 1
     assert ex.loc[ex["class"] == ro.SUPERSEDED_CLASS, "game_id"].tolist() == [ids["W"]]
-    assert ex.loc[ex["class"] == "prereg exclusion", "game_id"].tolist() == [ids["V"]]
+    assert ex.loc[ex["class"] == ro.MISSING_CLASS, "game_id"].tolist() == [ids["V"]]
+    assert gone["game_id"].tolist() == [ids["V"]]
     assert "finished first" in ex.loc[ex["class"] == ro.DUPLICATE_CLASS, "reason"].iloc[0]
     assert ex.loc[ex["class"] == ro.DUPLICATE_CLASS, ["model", "scenario", "arm", "log"]].notna().all().all()
     # every saved call is reconciled: kept games, the three dropped copies and the superseded sample's billed call
