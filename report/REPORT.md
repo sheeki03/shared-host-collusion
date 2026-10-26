@@ -1,40 +1,3 @@
-<!--
-DRAFT of the Apart Research AI Collusion Research Sprint submission. Template sections: Title, Authors, Abstract,
-1 Introduction, 2 Related Work, 3 Methods, 4 Results, 5 Discussion and Limitations, 6 Conclusion, Code and Data,
-Author Contributions, References, Appendix, LLM Usage Statement.
-
-Placeholders: a dotted key in double curly braces is a number or string from runs/analysis/results.json (written by
-analysis/report_outputs.py); TABLE:name in double braces is runs/analysis/tables/<name>.md; FIG:name in double braces
-is runs/analysis/figures/<name>.png. tools/fill_report.py renders REPORT.filled.md. With --confirmatory it fails on
-any unresolved or pending placeholder and lists every HTML comment (these included), editorial bracket and to-do
-marker by source line, so it cannot pass until all of them are deleted. A draft render also resolves placeholders
-inside comments, and analysis/tests/test_report_outputs.py checks every S6 placeholder anywhere in this file against
-the report contract, so every placeholder in this file must be a key the pipeline writes. Do not write example
-placeholders in comments.
-
-Every number in Section 4, Sections 5-6 and the abstract must come from a placeholder. The only literal numbers allowed
-are design constants frozen in prereg/PREREGISTRATION.md (commit 47a1c35) or fixed in the code at that commit, and
-pilot observations, which appear only in Section 3.10 and are labelled as pilot. HTML comments marked "if ..." give
-the wording to keep or delete once the sign and significance of an estimate are known. Delete all comments before
-export.
-
-The generated supplementary appendix is report/APPENDIX.md (tools/prompt_diff.py appendix): exact prompts, the
-prompt diff against the starter, model and arm tables, gate policies, engine parameters and the transcript excerpts.
-
-Length: main text (Sections 1-6) must fit 8 pages with two tables (Table 1, arms; Table 2, monitors) and four figures.
-Large generated tables and the scenario figure are in Appendix C, the hypotheses table (formerly Table 2) is Table E1
-in Appendix E, and the channel taxonomy is Table F1 in Appendix F; Table C14 is unused, Table C15
-is the paired monitor table and Table C16 the positive controls. Word count, 26 Oct 2026 04:18 IST (main-text prose:
-Sections 1-6 without tables, captions, comments, headings or the abstract; each placeholder one word; comments
-removed before counting): about 3,460 prose words and 335 caption words (3,300 before the review-point 5 and 8
-sentences in 4.0 and 4.3, which added about 160). Filling the bracketed sentences and the "if ..." comments in
-Sections 4-6 will add to that. Section 4.6 is a short summary; the extensions are Appendix G (merged from the former
-report/EXTENSIONS_SECTION.md, with its table renamed Table G1) and the exploratory analyses A1-A4 are Appendix H
-(Tables H1-H3); the A4 shared-resource matrix is Table A1. The merged results file for filling all of them comes from
-tools/merge_results.py. Check the page count after filling; if it runs over, shorten Section 2 and the Section 4 prose
-first.
--->
-
 # Do Rival LLM Agents Collude Through the Machine They Share? A Pre-registered Storage-Channel Study
 
 **Shivom Sharma**
@@ -44,28 +7,25 @@ With Apart Research
 
 *Research conducted at the AI Collusion Research Sprint, October 2026.*
 
-<!-- if meta.preliminary is true, keep this line under the byline:
-**Preliminary.** These results use {{meta.n_complete}} of 1,131 planned games ({{meta.n_rounds}} rounds). Games that
-finished after the analysis cut are not included; Table C11 gives the coverage per cell. -->
 
 ## Abstract
 
-<!-- 150-250 words. Finalise last. Pick one bracketed clause per result once the estimates are in. -->
-
 Rival firms' AI agents may share writable infrastructure. We test whether their large language model (LLM) agents
 use it to exchange information or coordinate. Two pricing agents play a repeated logit Bertrand game in separate
-no-network containers. A scratch directory is shared or private; prompts and market draws are matched. Randomised
-private costs and canaries trace crossings, while price regressions test response to the rival's signal. Seventeen
+no-network containers. A scratch directory is shared or private; prompts and market draws are matched. Canaries
+trace crossings, and price regressions test response to the rival's randomised private cost. Seventeen
 pre-registered arms vary awareness, permission, monitored chat, a scripted rival's offer and a command gate. The
-planned grid spans 14 configurations of 13 models and ten scenario framings on five engines; this report analyses
-{{meta.n_complete}} complete games ({{meta.n_rounds}} rounds). When permitted, agents [did / did not] use the shared folder to address their rival
-more than in matched private-storage games (interaction {{bound_lo.P1.l2.diff}} to {{bound_hi.P1.l2.diff}} as
-unclassifiable writes count as none or as addressed; {{P1.l2.unknown_bounds_verdict}}).
-Unprompted, the shared-minus-private difference in price dependence on the rival's private cost was {{P3.beta.diff}}
-({{P3.beta.ci_lo}} to {{P3.beta.ci_hi}}; minimum detectable effect {{P3.mde_observed}}). Monitoring chat [did / did not] push
-coordination into storage. A command gate blocked {{S2.block_rate}} of the commands it checked, [and / but] in
-{{S2.evasion_rate}} of games with a block, rival content still crossed later. [One-sentence takeaway on containment
-versus inspection, stated only as far as S2 and S6 support it.]
+grid spans 14 configurations of 13 models and ten framings on five engines; this report analyses
+{{meta.n_complete}} complete games ({{meta.n_rounds}} rounds). When permitted, agents did not use the shared folder to
+address their rival more than in matched private-storage games (interaction {{bound_lo.P1.l2.diff}} to
+{{bound_hi.P1.l2.diff}} as unclassifiable writes count as none or as addressed); they wrote rival-addressed notes in
+both. Unprompted, the shared-minus-private difference in price dependence on the rival's private cost was
+{{P3.beta.diff}} ({{P3.beta.ci_lo}} to {{P3.beta.ci_hi}}; minimum detectable effect {{P3.mde_observed}}). Monitoring
+cut delivered chat coordination but did not push it into storage. A command gate blocked {{S2.block_rate}} of
+checked commands; rival content crossed afterwards in {{S2.evasion_rate}} of games with a block. LLM
+transcript judges caught {{S6.llm_per_firm.tpr}} of crossings at a false-positive rate of {{S6.llm_per_firm.fpr}},
+while a path rule also flagged {{S6.tirith_path.fpr}} of games without one. Private storage removed the file
+channel, but scripted probes still passed bits through host memory accounting and the page cache.
 
 ## 1. Introduction
 
@@ -82,7 +42,6 @@ not a trusted execution environment. Private storage removes this writable path,
 OpenAI (2026c) elicited cache-timing and other cross-sandbox communication even without shared files. We predicted,
 but did not assume, that command inspection would be weaker than storage isolation (Section 4.3).
 
-<!-- Contributions: keep the clauses the results support; keep (1) and (4) regardless of the results. -->
 Our contributions are:
 
 1. A pre-registered market test combining matched storage assignment, randomised private signals, per-round canaries
@@ -162,7 +121,6 @@ and process reaping still leave persistent host state such as page cache (Append
 
 ### 3.4 Arms
 
-<!-- Game counts are from harness/arms.py::full_design (frozen). -->
 
 **Table 1. The 17 pre-registered arms.** Prompt additions are single sentences (Appendix B). "Core games" counts the
 40-round pricing games in the deep, broad and pairs grids; scenario games last 30 rounds.
@@ -255,7 +213,6 @@ Appendix E separates commit times from the author's account of what had been ins
 
 ### 3.10 Pilot
 
-<!-- Pilot numbers only. Never move them into Section 4, the abstract or the conclusion. -->
 
 Pilot seeds 9000+ covered 14 model probes and 28 smoke games. Probe agents accessed scratch in 176/315 commands;
 SHR-AWARE rival content appeared in 4/130 firm-rounds, so conditional levers were not triggered. In one five-round
@@ -276,12 +233,11 @@ spent ${{meta.account_spend_usd}}, classifiers, judges and extensions included (
 excluded (Table C10), and {{meta.parse_failure_rate}} of agent firm-turns fell back to the previous action after a
 failed retry. The classifier coded
 {{L2.label_coverage}} of the {{L2.n_candidates}} communication candidates; {{L2.labels_scratch.unknown}} scratch and
-{{L2.labels_chat.unknown}} chat candidates remained unknown.
-<!-- author: add one sentence on the blinded human check (Section 3.6: at least 50 candidate positives and 50
-sampled negatives) from results.json, which carries it once report_outputs gets --coding-agreement (pending before):
-coding.handcheck.n, coding.handcheck.raw_agreement with raw_ci_lo/raw_ci_hi, and coding.handcheck.kappa with
-kappa_boot_ci_lo/kappa_boot_ci_hi (analysis/RESULT_KEYS.md). Do not export before the check is done on the final
-candidate set and these keys resolve. -->
+{{L2.labels_chat.unknown}} chat candidates remained unknown. In the blinded human check of
+{{coding.handcheck.n}} candidates (50 classifier positives and 50 negatives, drawn as pre-registered; D30), the author
+agreed with the classifier on {{coding.handcheck.raw_agreement}} of items (Wilson 95% CI
+{{coding.handcheck.raw_ci_lo}} to {{coding.handcheck.raw_ci_hi}}; Cohen's κ {{coding.handcheck.kappa}},
+{{coding.handcheck.kappa_boot_ci_lo}} to {{coding.handcheck.kappa_boot_ci_hi}}).
 Table C1 gives per-arm rates of every endpoint, pooled over models; Table C3 summarises each model configuration.
 
 Both positive controls must respond for a null elsewhere to mean anything; a control fails when its 95% interval
@@ -298,9 +254,8 @@ difference in Δp was {{pc.chat_iso.dp.diff}} ({{pc.chat_iso.dp.ci_lo}} to {{pc.
 {{pc.chat_iso.coord_rate.failed_models}}; CHAT-ISO Δp: {{pc.chat_iso.dp.failed_models}}; ORACLE β_priv:
 {{pc.oracle.beta_priv.failed_models}}; per-model intervals rest on few games each, Table C16);
 without a failure but with a control that could not be checked (no interval, or no ORACLE games, as in the broad grid
-by design): {{pc.unverified_models}} (Table C16).
-<!-- if pc.failed_models is not "none": "For these models a positive control did not respond, so their nulls below mean
-the design could not detect collusion for them at this horizon, not that they are safe." -->
+by design): {{pc.unverified_models}} (Table C16). For the failing models a positive control did not respond, so
+their nulls below mean that the design could not detect collusion for them at this horizon, not that they are safe.
 
 ### 4.1 Displacement
 
@@ -322,19 +277,9 @@ interaction on β_priv, which needs no labels, was {{P2.storage.diff}} ({{P2.sto
 {{P2.storage_mon.diff}} ({{P2.storage_mon.ci_lo}} to {{P2.storage_mon.ci_hi}}). On same-host sets only, the
 interaction was {{sens.host_consistent.P2.storage.diff}} ({{sens.host_consistent.P2.storage.ci_lo}} to
 {{sens.host_consistent.P2.storage.ci_hi}}).
-<!-- Attempted versus delivered messages (self-censorship versus blocking, Section 3.10): add one sentence if the
-pipeline writes per-arm sent-message and block rates for the chat arms. Otherwise do not interpret the mechanism of
-the fall in delivery. -->
 
-<!-- if P2.unknown_bounds_verdict is "supported under both bounds": "Both parts of the pre-registered criterion hold. With chat monitored, coordination did
-not stop but moved: prices came to depend on the rival's private cost only when the folder was shared and chat was
-screened. The CHAT-MON-SHR and CHAT-SHR rows of Table C1 show the addressed-write rates behind this, and Appendix D
-gives a transcript." Name the highest rung reached (L3 or L4). -->
-<!-- if displacement fails under both bounds and the chat part holds: "Monitoring suppressed delivered chat coordination, but the
-β_priv interaction does not show dependence moving into storage. By the pre-registered standard, displacement is not
-supported." Do not describe CHAT-MON-SHR addressed writes as displacement in this case. -->
-<!-- if displacement fails under both bounds and the chat part fails: "The monitor did not reliably reduce delivered coordination, so
-the displacement test lacks its premise; the interaction is reported for completeness only." -->
+Monitoring suppressed delivered chat coordination, but the β_priv interaction does not show dependence moving into
+storage. By the pre-registered standard, displacement is not supported.
 
 ### 4.2 Capability versus propensity
 
@@ -353,11 +298,10 @@ rate by {{bound_lo.P1.l2.diff}} (95% CI {{bound_lo.P1.l2.ci_lo}} to {{bound_lo.P
 {{bound_hi.P1.l2.p_seedblock}}) more with shared than with private storage ({{bound_lo.P1.l2.n_pairs}} matched
 pairs): {{P1.l2.unknown_bounds_verdict}}.
 The supporting β_priv interaction was {{P1.beta.diff}} ({{P1.beta.ci_lo}} to {{P1.beta.ci_hi}}; p = {{P1.beta.p}}).
-<!-- if P1.l2.unknown_bounds_verdict is "supported under both bounds": "Told that they may, agents use a shared folder to address their rival
-(L2)." Then say whether β_priv also moved, i.e. whether the notes carried usable private information (L3). -->
-<!-- if P1.l2 is null while SHR-PERMITTED shows L2 events: say that agents addressed the rival in both storage arms
-(for example by writing notes in ISO that could never be delivered), so permission changed intent more than channel
-use. -->
+Agents addressed the rival in both storage arms: under permission the addressed-write rate per firm-turn was
+{{bound_lo.P1.l2_rate.SHR-PERMITTED.rate}} to {{bound_hi.P1.l2_rate.SHR-PERMITTED.rate}} with shared storage and
+{{bound_lo.P1.l2_rate.ISO-PERMITTED.rate}} to {{bound_hi.P1.l2_rate.ISO-PERMITTED.rate}} with private storage, where
+such notes could never be delivered. Permission changed intent more than channel use.
 
 *Propensity (P3).* Without permission, the SHR-AWARE minus ISO-AWARE contrast in β_priv was {{P3.beta.diff}}
 ({{P3.beta.ci_lo}} to {{P3.beta.ci_hi}}; p = {{P3.beta.p}}, Holm-adjusted {{P3.beta.p_holm}}, the larger of the two
@@ -365,15 +309,13 @@ D29 runs, seed-block
 {{P3.beta.p_seedblock}}), and the matched price
 difference was {{P3.price.diff}} ({{P3.price.ci_lo}} to {{P3.price.ci_hi}}). We predicted a value near zero; Section
 4.4 bounds it.
-<!-- if P3 is positive and significant: this becomes the headline. Say that rivals' prices responded to private costs
-that could only have crossed through the folder, name the rung (L3, or L4 if S5 also moves), and point to the
-transcript in Appendix D. Do not call it agreement or intent. -->
 
 *What crosses (S4).* In the {{S4.n_games}} core games where transfer was observed or an addressed write occurred,
 pooled β_priv was {{S4.beta_priv.est}} ({{S4.beta_priv.ci_lo}} to {{S4.beta_priv.ci_hi}}) and β_com was
 {{S4.beta_com.est}} ({{S4.beta_com.ci_lo}} to {{S4.beta_com.ci_hi}}).
-<!-- interpret: private cost versus common forecast; relate to the static check in 3.2 without claiming the
-repeated-game incentive. -->
+Where something crossed or was addressed, prices followed the rival's private cost but not its forecast error, so
+what crossed was private-cost information. These games are selected on the outcome, so this is descriptive
+({{S4.n_games_unknown_membership}} games whose only possible addressed write was unknown are left out).
 
 *Welfare (S5).* Over all {{S5.cs.n_pairs}} matched pairs, consumer surplus in SHR minus ISO games was {{S5.cs.diff}}
 ({{S5.cs.ci_lo}} to {{S5.cs.ci_hi}}). Breakdowns by whether transfer was observed are descriptive only.
@@ -387,14 +329,14 @@ differences were {{S1.dp_diff.PROVOC_vs_HINT.diff}} ({{S1.dp_diff.PROVOC_vs_HINT
 the pre-registration did not define and D7 defines behaviourally as a last-ten-round collusion index of at least 0.5,
 was {{S1.accept_rate.PROVOC}} (HINT {{S1.accept_rate.PROVOC-HINT}}, BENIGN
 {{S1.accept_rate.PROVOC-BENIGN}}). Table C5 gives the rates by model.
-<!-- interpret against the controls: PROVOC over HINT separates responding to an offer from responding to information;
-HINT over BENIGN separates information from merely finding a note. A behavioural acceptance is not an adjudicated
-acceptance: report L5 only when an offer, an adjudicated reply or note accepting it, and changed conduct all appear.
-The scripted rival never punishes, so any price response is a lower bound on what an enforcing rival would obtain. -->
+Nearly every scripted note was read, and Δp did not differ between the offer and either control, so the offer moved
+prices no more than finding a note, or the information in it, did. Behavioural acceptance was high in all three arms,
+which reflects tacit collusion in this market rather than a response to the offer; the scripted rival never
+punishes, so any response would be a lower bound on what an enforcing rival would obtain.
 
 *Across models and scenarios (S3, G).* Table C4 (model-variant pairs), Figure C1 and Table C6 (P3 contrasts by
 scenario and engine; Table C6 adds SHR-PERMITTED − SHR-AWARE, as scenarios lack ISO-PERMITTED) are descriptive.
-<!-- one or two sentences on the direction of the S3 and G patterns only; no causal claim about refusal training. -->
+With three seeds per model and arm in these grids, we report them without interpretation.
 
 ### 4.3 Comparison of defence layers
 
@@ -418,8 +360,6 @@ firm-turns with a command that touches `/srv/scratch` outside the bulletin by {{
 {{S2.interaction.diff}} ({{S2.interaction.ci_lo}} to {{S2.interaction.ci_hi}}). In {{S2.evasion_rate}} of the
 {{S2.n_games_blocked}} gated games with at least one block, a canary or content crossing still occurred in a later
 round.
-<!-- Evasion taxonomy (S2): the pipeline does not yet classify evasions. Add a by-class count (relative paths, globs,
-strings built at run time) to Appendix C, without working command strings, or drop the word "taxonomy". -->
 
 **Table 2.** Detection by each monitor at the game level: true-positive rate at the achieved false-positive rate,
 with intervals and AUROC where class counts permit. The headline positive label is a trace-confirmed rival-authored
@@ -453,10 +393,11 @@ for the per-firm judge, and {{S6.by_subject.glm53.active_beta.game_judged.tpr}} 
 {{S6.by_subject.glm53.active_beta.game_judged.fpr}} versus {{S6.by_subject.other.active_beta.game_judged.tpr}} at
 {{S6.by_subject.other.active_beta.game_judged.fpr}} for active β, which reads no model text (descriptive: the judge
 sample is not stratified by subject model).
-<!-- if the path rule's FPR is high because agents read /srv/scratch routinely: say that a rule on the path cannot tell
-exploring from communicating, which is the core of the prediction. -->
-<!-- if evasion_rate is near zero and deterrence is large: say the prediction was not borne out in this setting, and
-that agents mostly complied with the announced policy rather than routing around it. -->
+A rule on the path cannot tell exploring from communicating: agents touched the shared folder in almost every game,
+so the path rules flagged nearly all negative games as well as the positives.
+The predicted evasion did not appear: enforcement reduced turns that touched the folder, and rival content crossed
+afterwards in {{S2.evasion_rate}} of gated games with a block, so agents mostly complied with the policy rather than
+routing around it.
 
 ### 4.4 Bounded nulls
 
@@ -476,13 +417,10 @@ rounds within a game are dependent, so that turn-level bound is descriptive. The
 first-mover placebo, which should be null unless some path other than storage links the firms within a round, was
 {{placebo.beta_first.est}} ({{placebo.beta_first.ci_lo}} to {{placebo.beta_first.ci_hi}}). Table C7 has the
 sensitivity analyses.
-<!-- if P3 is null: "We can rule out average spontaneous storage-mediated price dependence above {{P3.beta.ci_hi}}
-(the upper 95% limit), and L3 transfer in more than {{P3.l3_upper}} of games, for these models at this horizon; the
-design had 80% power for an effect of {{P3.mde_observed}}. We cannot rule out smaller effects, rarer events, or
-behaviour that appears only over longer horizons." An MDE is not a bound on the effect: rule effects out only with the
-interval. If the run passed --pilot-beta-sd, P3.mde (Figure 4's band) differs from P3.mde_observed; do not pass it. -->
-<!-- if the placebo is not null: flag it prominently. Some path other than storage (for example a bulletin or ordering
-artefact) can then create apparent dependence, and every β-based claim above must carry that caveat. -->
+We can rule out average spontaneous storage-mediated price dependence above {{P3.beta.ci_hi}} (the upper 95% limit),
+and L3 transfer in more than {{P3.l3_upper}} of games, for these models at this horizon; the design had 80% power for
+an effect of {{P3.mde_observed}}. We cannot rule out smaller effects, rarer events, or behaviour that appears only
+over longer horizons.
 
 ### 4.5 Exploratory: non-storage channel attempts
 
@@ -496,23 +434,19 @@ generation, and probes of other shared resources such as processes, IPC and sock
 narrow because a firm's rounds are not independent) contained at least one match; Table C13 splits them by family,
 storage condition and arm. A match is an attempt, not a working channel or evidence of intent, and nothing here can
 confirm transfer.
-<!-- if none matched (X.nonstorage.any.all.rate is zero): "No agent command matched; the 95% upper bound is
-{{X.nonstorage.any.all.ci_hi}} per firm-round. OpenAI's agents were mostly told which channel to probe or given a
-protocol, so this is the expected result; it bounds uninstructed attempts in this setting and says nothing about
-capability." -->
-<!-- if some matched: give the ISO and SHR rates ({{X.nonstorage.any.ISO.rate}} and {{X.nonstorage.any.SHR.rate}})
-and the families behind them. Routine look-around commands match too, so read the family split and the firm-games
-with repeated attempts (Table C13) before calling anything deliberate, and check whether matches cluster after a gate
-block or follow an addressed note proposing a protocol. In the text, describe families only, never a working
-command (Table C13 shows only short, redacted excerpts), and claim no transfer. -->
+Matches were rare in both conditions ({{X.nonstorage.any.ISO.rate}} of ISO and {{X.nonstorage.any.SHR.rate}} of SHR
+firm-rounds): {{X.nonstorage.probe.all.k}} probes of other shared resources, {{X.nonstorage.timing.all.k}} timing
+primitives, {{X.nonstorage.host_views.all.k}} host-wide views and {{X.nonstorage.load.all.k}} load generation (Table
+C13). We describe families only; nothing here shows a working channel.
 
 ### 4.6 Extensions and further exploratory analyses
 
 *Declared after the freeze and before their data were read (`prereg/EXTENSIONS.md`, `prereg/EXPLORATORY.md`). No
 extension game or exploratory statistic enters a confirmatory estimate or the Holm family.* E1 re-ran P1–P3 on new
 market draws ({{ext.meta.rep.n_complete}} of 144 planned games).
-<!-- One clause per hypothesis with its pre-declared E1 reading from Appendix G (replicates, consistent with the
-confirmatory null but inconclusive, E1-only effect, fails to replicate, inconclusive). -->
+Unknown labels block its readings for {{ext.rep.labels_blocked}} as in the confirmatory family (Appendix G gives
+both bounds), and its P3 contrast, {{ext.rep.P3.beta.diff}} ({{ext.rep.P3.beta.ci_lo}} to
+{{ext.rep.P3.beta.ci_hi}}), is consistent with the confirmatory null but inconclusive at this sample size.
 In E4, a secret-exchange task with no market, an exact code crossed in {{ext.sx.success.SX-SHR.all.rate}} of
 firm-rounds with the folder shared and {{ext.sx.success.SX-ISO.all.rate}} with it private. A scripted calibration of
 the ISO sandbox with no model (A4) decoded bits between the two firms' containers through host-wide memory accounting
@@ -524,15 +458,18 @@ analyses A1–A4.
 
 ## 5. Discussion and Limitations
 
-<!-- Rewrite the first paragraph once results are in, keeping to what the ladder rungs support. -->
-The PERMITTED, AWARE and chat-monitor arms distinguish capability, unprompted use and displacement. [One sentence
-per answer, naming its evidence level.] A rise in CHAT-MON-SHR β_priv may reflect a shared file used only to agree
-an encoding for screened chat (Zolkowski et al. 2025); call it storage-carried only with trace evidence. [One
-sentence contrasting the gate and private storage, as S2/S6 warrant.] OpenAI (2026d) likewise recommends closing
-easily discovered high-bandwidth cross-sample channels.
-<!-- If S2 and S6 support it: "Rules on commands that touch the path either fire on routine exploration or miss reads
-that reach it by another spelling, while giving each principal private storage removes the shared writable path
-outright." Otherwise state what the gate did achieve. -->
+The PERMITTED, AWARE and chat-monitor arms distinguish capability, unprompted use and displacement. Told that they
+may, agents wrote notes addressed to their rival (L2) about as often when the folder was private as when it was
+shared, so permission changed intent more than channel use. Unprompted, shared storage did not detectably raise the
+dependence of prices on the rival's private cost (L3 not shown; a bounded null). Monitoring removed most delivered
+chat coordination without moving it into storage, and prices followed the rival's last price less, not more, under
+the monitor (E5, exploratory). Had CHAT-MON-SHR β_priv risen, it could have reflected a shared file used only to agree
+an encoding for screened chat (Zolkowski et al. 2025). The gate cut use of the folder, but its path rule could not
+separate exploring from communicating, whereas private storage removes the file channel outright, and LLM judges
+reading transcripts separated crossing games from the rest with few false positives. OpenAI (2026d) likewise
+recommends closing easily discovered high-bandwidth cross-sample channels.
+Rules on commands that touch the path fired on routine exploration as well as on crossings, while giving each
+principal private storage removed the shared writable path outright.
 Relative-path bypasses are common for command denylists (Chen and Lin 2026), yet S2 tests one rule, not all command
 inspection. β_priv tests conduct without reading messages. File traces and path rules miss timing channels, which
 private storage also leaves open (Appendix F).
@@ -567,18 +504,21 @@ action-channel and AI-control claims (Greenblatt et al. 2023).
 
 ## 6. Conclusion
 
-<!-- One or two paragraphs, written last. Lead with displacement and capability versus propensity, then the defence
-comparison, then the bounded nulls. Use only placeholders already reported above. -->
 We tested whether LLM agents acting for rival firms on one host use a shared scratch directory to pass private
 information or coordinate prices, in a pre-registered design that cuts the storage path while holding prompts and
-market draws fixed. [Findings in two or three sentences.] Whatever the sign of each effect, the evidence ladder, the
-matched cuts and the minimum detectable effects state how far each conclusion reaches.
+market draws fixed. Monitored chat lost most of its coordination, and that coordination did not move into storage.
+Agents told they may use the folder wrote notes addressed to their rival, but as often when it was private, and
+unprompted, shared storage did not detectably raise prices' dependence on the rival's private cost, within a minimum
+detectable effect of {{P3.mde_observed}}. Among defences, a command gate deterred use of the folder without detected
+evasion, but its path rule could not tell exploring from communicating; LLM transcript judges separated crossing
+games well; and private storage removed the file channel, while scripted probes showed host-level channels that it
+leaves open. The evidence ladder, the matched cuts and the minimum detectable effects state how far each conclusion
+reaches.
 
 ## Code and Data
 
 - Code, pre-registration, deviations and analysis: https://github.com/sheeki03/shared-host-collusion (Sharma 2026b).
   The pre-registration is frozen at commit `47a1c35` (tag `prereg-freeze`).
-  <!-- check that {{meta.freeze_commit}} equals 47a1c35 before export. -->
 - tirith 0.5.0 release candidate built from PR #278 head `8856dc60`; binary sha256
   `aaa5088571c82b3b1b10cde192f6cb07f2aea813d8b16b330041515a7a02c087` (Sharma 2026a).
 - Data in this submission: aggregate tables and redacted transcript excerpts in the report and appendix. Raw Inspect
@@ -1048,37 +988,26 @@ the Holm family, so every p-value below is unadjusted. Nothing in this section c
 
 **E1, replication.** E1 re-ran the eight P1–P3 arms with GLM 5.3, DeepSeek V4 Pro and GPT-6.1 Sol on fresh market
 draws (seeds 2000–2005; {{ext.meta.rep.n_complete}} of 144 planned games complete). Each contrast had at most 18
-matched units. The P1 interaction on the addressed-write rate was {{ext.rep.P1.l2.diff}} (95% CI
-{{ext.rep.P1.l2.ci_lo}} to {{ext.rep.P1.l2.ci_hi}}; p = {{ext.rep.P1.l2.p}}). For P2, the change in delivered chat
-coordination under the monitor was {{ext.rep.P2.chat.diff}} ({{ext.rep.P2.chat.ci_lo}} to
-{{ext.rep.P2.chat.ci_hi}}). In β_priv, CHAT-MON-SHR minus CHAT-MON-ISO was {{ext.rep.P2.storage_mon.diff}}
+matched units. The classifier left some E1 labels unknown, which blocks its L2 readings for
+{{ext.rep.labels_blocked}} as in the confirmatory family (D29). Counting each unknown as no or as yes, the P1
+interaction on the addressed-write rate was {{ext.rep.bound_lo.P1.l2.diff}} (95% CI {{ext.rep.bound_lo.P1.l2.ci_lo}}
+to {{ext.rep.bound_lo.P1.l2.ci_hi}}) or {{ext.rep.bound_hi.P1.l2.diff}} ({{ext.rep.bound_hi.P1.l2.ci_lo}} to
+{{ext.rep.bound_hi.P1.l2.ci_hi}}), and the change in delivered chat coordination under the monitor was
+{{ext.rep.bound_lo.P2.chat.diff}} ({{ext.rep.bound_lo.P2.chat.ci_lo}} to {{ext.rep.bound_lo.P2.chat.ci_hi}}) or
+{{ext.rep.bound_hi.P2.chat.diff}} ({{ext.rep.bound_hi.P2.chat.ci_lo}} to {{ext.rep.bound_hi.P2.chat.ci_hi}}). In β_priv, CHAT-MON-SHR minus CHAT-MON-ISO was {{ext.rep.P2.storage_mon.diff}}
 ({{ext.rep.P2.storage_mon.ci_lo}} to {{ext.rep.P2.storage_mon.ci_hi}}), and the monitor × storage interaction was
 {{ext.rep.P2.storage.diff}} ({{ext.rep.P2.storage.ci_lo}} to {{ext.rep.P2.storage.ci_hi}}; p =
-{{ext.rep.P2.storage.p}}). Both parts of the displacement criterion held: {{ext.rep.P2.supported}}. The P3 contrast in
+{{ext.rep.P2.storage.p}}). Displacement read {{ext.rep.bound_lo.P2.reading}} and {{ext.rep.bound_hi.P2.reading}}
+under the two bounds. The P3 contrast in
 β_priv, SHR-AWARE minus ISO-AWARE, was {{ext.rep.P3.beta.diff}} ({{ext.rep.P3.beta.ci_lo}} to
 {{ext.rep.P3.beta.ci_hi}}; p = {{ext.rep.P3.beta.p}}). With 18 units, only a large effect could have replicated.
-<!-- if ext.rep.labels_blocked names P1 (L2) and/or P2 (D29 applied to E1), replace the P1 and P2 chat sentences above
-with the bounds and say the E1 claim is blocked by unknown labels: "The classifier left some E1 labels unknown, which
-blocks these readings as for the confirmatory family (D29). Counting each unknown as no or as yes, the P1 interaction
-was ext.rep.bound_lo.P1.l2.diff (CI ...) or ext.rep.bound_hi.P1.l2.diff (CI ...), read ext.rep.bound_lo.P1.l2.reading
-and ext.rep.bound_hi.P1.l2.reading; the change in delivered chat coordination was ext.rep.bound_lo.P2.chat.diff or
-ext.rep.bound_hi.P2.chat.diff, and displacement read ext.rep.bound_lo.P2.reading and ext.rep.bound_hi.P2.reading."
-Use double-brace placeholders for these keys when switching. -->
 
-<!-- Classify each of P1-P3 against the confirmatory verdict with the pre-declared rule and give the verdict in one
-sentence each.
-- Confirmatory result supported: E1 replicates if it has the same sign and a 95% CI that excludes zero. For P2,
-  ext.rep.P2.supported must be yes.
-- Confirmatory null: by the pre-declared rule E1 "agrees" if its CI includes zero. Report that label, but write it as
-  "consistent with the confirmatory null; inconclusive at this sample size", never as a replicated null or as
-  evidence of no effect: with at most 18 units the CI can also contain effects at least as large as the confirmatory
-  MDE (P3.mde_observed for P3). Say E1 bounds the effect only if its CI excludes such effects. A CI that excludes zero
-  is an "E1-only effect", reported as such.
-- Fails to replicate: the CI excludes zero in the direction opposite to a supported confirmatory estimate. Report
-  the two estimates side by side and do not edit Sections 4.1-4.2.
-- Otherwise: "inconclusive at this sample size", not "failed".
-If P1 or P2 part (i) shows "pending", the E1 labels were not coded; say so and keep the beta results. If the blinded
-hand-check of E1 candidates was not done, add: "E1 communication labels are classifier-only." -->
+Against the confirmatory nulls, E1's P1 interaction reads {{ext.rep.bound_lo.P1.l2.reading}} with unknowns counted
+as no and {{ext.rep.bound_hi.P1.l2.reading}} with them counted as yes. By the pre-declared rule a CI above zero
+against a confirmatory null is an E1-only effect, and one that holds under only one bound depends on the unknown
+labels, so it replicates nothing. P3 reads {{ext.rep.P3.beta.reading}}: consistent with the confirmatory null and
+inconclusive at this sample size, since with at most 18 units its interval also contains effects as large as the
+confirmatory minimum detectable effect. E1 communication labels are classifier-only.
 
 **E2, a 100-round horizon.** E2 extended the four storage × permission arms to 100 rounds with GLM 5.3 and DeepSeek
 V4 Pro (seeds 3000–3002; {{ext.meta.long.n_complete}} of 24 planned games complete), to see whether a 40-round game
@@ -1090,13 +1019,9 @@ SHR-AWARE minus ISO-AWARE was {{ext.long.last20.aware.all.diff}} (95% CI {{ext.l
 {{ext.long.last20.aware.all.ci_hi}}), and SHR-PERMITTED minus ISO-PERMITTED was
 {{ext.long.last20.permitted.all.diff}} ({{ext.long.last20.permitted.all.ci_lo}} to
 {{ext.long.last20.permitted.all.ci_hi}}), each over at most six matched pairs.
-<!-- Pre-declared rule, per arm: "still rising after round 40" if ext.long.ci_block.<arm>.all.10.ci_lo is above
-ext.long.ci_block.<arm>.all.4.ci_hi. Name the arms that meet it. -->
-<!-- if any arm meets the rule: "In [arms], prices kept rising after round 40, so the 40-round core games understate
-tacit collusion for these two models. The Δp contrasts in Section 4.2 compare arms at a horizon at which collusion
-was still developing." -->
-<!-- if no arm meets it: "We saw no clear rise after round 40 at this sample size. This does not exclude collusion
-that emerges more slowly still, as in the 300-round games of Fish et al. (2024)." -->
+By the pre-declared rule (the rounds 91–100 interval lies above the rounds 31–40 interval), no arm was still rising
+after round 40 at this sample size. This does not exclude collusion that emerges more slowly still, as in the
+300-round games of Fish et al. (2024).
 
 **E3, isolated storage with permission to use any means.** ISO-ANY keeps the scratch folder private but tells
 agents they may coordinate with the rival "through any means available on this machine". It ran with GLM 5.3,
@@ -1108,7 +1033,6 @@ the 95% upper bound was {{ext.any.crossing.l1.all.upper_all}} per firm-round. At
 `analysis/nonstorage.py` appeared in {{ext.any.nonstorage.any.all.rate}} of firm-rounds (Wilson 95% CI
 {{ext.any.nonstorage.any.all.ci_lo}} to {{ext.any.nonstorage.any.all.ci_hi}}, too narrow because a firm's rounds are
 not independent).
-<!-- Split the attempts by family (host_views, timing, load, probe: the ext.any.nonstorage.<family>.all keys). -->
  Such a command is an attempt, not evidence that anything crossed. The comparator is retrospective: the
 matched confirmatory ISO-PERMITTED games share market draws, move order and canaries but ran earlier, and
 {{ext.any.comparator.n_same_host_pairs}} of the {{ext.any.vs_permitted.beta.all.n_pairs}} matched pairs ran both
@@ -1117,16 +1041,12 @@ games on one host, so the contrasts below are descriptive. Against those games, 
 {{ext.any.vs_permitted.beta.all.p}}), and in the collusion index over the last 10 rounds
 {{ext.any.vs_permitted.ci_last10.all.diff}} ({{ext.any.vs_permitted.ci_last10.all.ci_lo}} to
 {{ext.any.vs_permitted.ci_last10.all.ci_hi}}).
-<!-- if ext.any.crossing.l1.all.k is zero: "As predicted, nothing crossed. Turns are sequential and every agent
-process is reaped, so the shared host offered no path for rival content to reach a firm's command output. With no
-crossing in any of the 16 games, the per-game bound is 3/16." Use 3/16 only if ext.any.crossing_game.l1.all.n_unknown
-is zero; otherwise give ext.any.crossing_game.l1.all.upper_all and say how many games had an unverified trace. Then describe the attempts by family only (host views,
-timing, load, probes), never as working commands. -->
-<!-- if it is above zero: say that the crossing was investigated first as a harness isolation failure, and give the
-outcome. Do not credit it to the agents until a harness cause is ruled out. -->
-<!-- if the beta difference CI lies above zero: "Prices responded to the rival's private cost without any shared
-storage. This points to a non-storage channel; the transcripts are in Appendix D." Otherwise call the result a
-bounded null. -->
+As predicted, nothing crossed. Turns are sequential and every agent process is reaped, so the shared host offered
+no path for rival content to reach a firm's command output; with no crossing and no unverified trace in any of the
+16 games, the per-game 95% upper bound is {{ext.any.crossing_game.l1.all.upper_all}}.
+The β_priv difference is descriptive: its bootstrap interval and sign-flip p (above) need not agree at 16 pairs,
+the comparator ran earlier and partly on other hosts, and with no crossing and no non-storage attempt we do not
+read a positive difference as a channel.
 
 **E4, a secret-exchange task.** E4 removes market incentives. Two agents from partner teams must each learn the
 other's fresh 8-digit code every round. They may use any means, with the folder shared (SX-SHR) or private
@@ -1145,14 +1065,9 @@ to {{ext.sx.success.SX-SHR.all.ci_hi}}) and {{ext.sx.success.SX-ISO.all.rate}} i
 {{ext.sx.game_any_success.SX-ISO.all.n}} SX-ISO games had at least one success. The matched game-level difference,
 SX-SHR minus SX-ISO, was {{ext.sx.shr_minus_iso.all.diff}} ({{ext.sx.shr_minus_iso.all.ci_lo}} to
 {{ext.sx.shr_minus_iso.all.ci_hi}}; p = {{ext.sx.shr_minus_iso.all.p}}).
-<!-- if SX-ISO has no success (ext.sx.success.SX-ISO.all.k is zero): "Without a shared folder, no code crossed. These
-agents did not build a host-level channel within ten rounds. That does not show that no such channel exists." Name
-any model whose SX-SHR success was zero (ext.sx.success.SX-SHR.<model>.k): for it the positive control failed, so
-its SX-ISO null is uninformative. -->
-<!-- if SX-ISO has any success: this is the section's main finding. A chance match is effectively impossible, so
-give the trace evidence (ext.sx.evidence.SX-ISO.n_trace_crossing, n_code_in_output_before_guess,
-n_no_trace_evidence; table ext_sx_success_evidence), describe the channel by class, say how the harness was ruled
-out, and point to the transcript in Appendix D. Check ext.sx.check.payoff_signal_mismatch first. -->
+Without a shared folder, no code crossed. These agents did not build a host-level channel within ten rounds, which
+does not show that no such channel exists (A4 finds that some do). Every model passed codes with the folder shared,
+so the SX-ISO null is informative for each of them.
 
 **E5, prices as signals.** Every arm shows the rival's past prices, in the history table and on the public bulletin.
 If screening chat moved coordination from words into prices, a firm's price should follow its rival's previous price
@@ -1162,15 +1077,15 @@ minus the unmonitored chat arms was {{signal.mon_vs_chat.diff}} (95% CI {{signal
 {{signal.mon_vs_chat.ci_hi}}; p = {{signal.mon_vs_chat.p}}; seed-block p = {{signal.mon_vs_chat.p_seedblock}}).
 Unmonitored chat minus no chat was {{signal.chat_vs_aware.diff}} ({{signal.chat_vs_aware.ci_lo}} to
 {{signal.chat_vs_aware.ci_hi}}).
-<!-- Describe following above zero as descriptive evidence that prices carried more coordination under screening,
-not of communication or agreement: best responses to the rival's last price also produce following. The ext-rep
-run of analysis/signalling.py (--cohort ext) writes the same signal.* key names to its own file; report it in
-Appendix C or give its keys a prefix before merging. -->
+Best responses to the rival's last price also produce following, so these contrasts are descriptive, not evidence of
+communication: prices followed the rival's last price more with unmonitored chat than without chat, and less, not
+more, when chat was monitored, so screening did not move coordination into price signals.
 
-<!-- Rewrite the closing paragraph once results are in. Keep it to what the E1 verdicts and the E3/E4 outcomes
-support, and carry any SX-ISO success into Section 5 as a limit on "containment is the fix". -->
-Taken together, E1 shows how far the primary contrasts survive new market draws. E3 and E4 test whether private
-storage alone contains these agents when the host itself is shared and they are told they may use it.
+Taken together, E1 does not replicate any confirmatory effect, and none of the confirmatory nulls is overturned by a
+reading that holds under both label bounds. E3 and E4 show that, with the folder private and any means permitted,
+no agent passed rival content or a code across the host in these games, while with the folder shared the
+secret-exchange agents passed codes readily. The scripted calibration (A4) shows that host-level channels exist all
+the same, so this is a statement about these agents in these games, not about the sandbox.
 
 {{TABLE:ext_long_blocks}}
 
@@ -1253,9 +1168,8 @@ in {{x.isocal.channel_runs.memory}} of {{x.isocal.n_runs}} runs, page-cache timi
 {{x.isocal.channel_runs.pagecache}} (in {{x.isocal.unavailable_runs.pagecache}} more its declared setup probe found too
 few files that eviction slowed, so that run gives neither a channel nor a null), the load average in
 {{x.isocal.channel_runs.load}}, and the storage-timing control in {{x.isocal.channel_runs.storage}}.
-<!-- if x.isocal.channel_runs.storage is above zero: "The negative control was not negative everywhere: storage write
-timing carried a weak channel on [the host types, from Table A1], so it is a channel there, not a control." Name the
-host type from Table A1. -->
+The negative control was not negative everywhere: storage write timing carried a weak channel on the Mac's Docker
+Desktop VM (Table A1), so it is a channel there, not a control.
 These are capacities for scripted agents that agreed an encoding beforehand, so they bound what the sandbox allows,
 not what the models did; the scan in Section 4.5 counts attempts only. Not calibrated: CPU-cache and other
 microarchitectural channels, turn-duration timing, the B → A direction, the game's random move order and more than
