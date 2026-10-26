@@ -4,8 +4,8 @@ Do co-located LLM agents that work for competing firms collude through the machi
 repository holds all sprint work: harness, market engines, pre-registration, analysis and paper.
 
 Read the [completed report](report/SUBMISSION.md), [technical appendix](report/APPENDIX.filled.md), and
-[reviewed supplementary tables](report/tables/README.md). D38 explicitly records the unmet human-validation
-requirement and deferred account-wide cost reconciliation; the additional AI review is labelled as such.
+[reviewed supplementary tables](report/tables/README.md). D38 records the deferred account-wide cost
+reconciliation; D40 records the independent human hand-check, which replaced AI labels that are not reported.
 
 **Timeline.** Built for the Apart Research AI Collusion Research Sprint (23–25 Oct 2026; submissions close
 25 Oct 23:59 AoE). Work started on 25 Oct 2026, ~00:58 IST. The commit history is the record of what was done
@@ -252,10 +252,10 @@ complete and never claims a result.
 
 ## Submission package and final review
 
-The finalisation changes are recorded in D37–D39. D38 explicitly records that the planned human validation was
-not completed. The separate 100-item AI review is reported as AI-to-classifier agreement on the frozen balanced
-sample; it does not replace human validation, change the original labels, or resolve the primary unknown-label
-blocks. Account-wide balance reconciliation is deferred. The report distinguishes recorded accounting costs,
+The finalisation changes are recorded in D37–D40. The pre-registered 100-item hand-check was labelled by an
+independent human reviewer on the blinded sheet after outcomes were known (D40); the AI labels described in D38 are
+withdrawn and not reported. The agreement does not change the original labels or resolve the primary unknown-label
+blocks. Account-wide balance reconciliation is deferred (D38). The report distinguishes recorded accounting costs,
 conservative estimates and retry reservations from the separate, date-windowed API-key usage receipt.
 
 With the private analysis inputs available, the final review inputs and report can be rebuilt without model calls:

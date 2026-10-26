@@ -24,12 +24,13 @@ non-detected effect, an event-rate upper limit, and a claim blocked by unknown l
 are uniform imputations, not contrast bounds; the sharp point-estimate ranges added in D36 apply to the specified
 confirmatory P1 and P2 contrasts, not automatically to E1.
 
-The author authorised an additional blinded AI review in place of completing the planned human check, and deferred
-account balance/top-up reconciliation (D38). The report explicitly states that human validation was not completed.
-The additional review uses review.ai.* keys; it must never populate coding.handcheck.* or the original human-label
-sheet. It measures agreement on the balanced classifier-stratified sample, not population classification accuracy,
-and does not change the primary classifier labels or the unknown-label blocks on confirmatory claims. The AI-use
-disclosure and contribution statement describe substantial AI assistance without claiming human validation.
+The pre-registered 100-item hand-check was labelled by an independent human reviewer on the blinded sheet, after
+outcomes were known (D40). Its agreement is reported only through coding.handcheck.* (llm_coder agreement, then
+report_outputs). The D38 labels were produced by an AI agent and are withdrawn: no review.ai.* key, AI label or AI
+agreement statistic appears in the report. The hand-check measures agreement on the balanced classifier-stratified
+sample, not population classification accuracy, and does not change the primary classifier labels or the
+unknown-label blocks on confirmatory claims. Account balance/top-up reconciliation remains deferred (D38). The
+AI-use disclosure states that the hand-check labels were assigned by an independent human reviewer.
 
 Cost wording must distinguish recorded model-call costs (costs.recorded.* includes conservative estimates where final
 charges were unavailable), budget-ledger settlements (including full reservations), and the API-key usage receipt

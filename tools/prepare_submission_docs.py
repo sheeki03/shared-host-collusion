@@ -204,9 +204,11 @@ def format_docx(path: Path, *, supplement: bool = False, combined: bool = False)
         if p._p.xpath(".//w:drawing"):
             p.paragraph_format.keep_with_next = True
     # Figures fit the printable width. A taller appendix figure must retain readable labels; the two main figures
-    # are wide enough that this height cap does not alter their page budget.
-    for shape in doc.inline_shapes:
-        factor = min(1, Inches(6.5)/shape.width, Inches(4.0)/shape.height)
+    # are wide enough that this height cap does not alter their page budget. In the main text (the first two figures
+    # outside the supplement) they are set at 6.2 in so Sections 1-6 and the back matter fit the 8-page limit.
+    for k, shape in enumerate(doc.inline_shapes):
+        width = Inches(6.2) if k < 2 and not supplement else Inches(6.5)
+        factor = min(1, width/shape.width, Inches(4.0)/shape.height)
         shape.width, shape.height = int(shape.width*factor), int(shape.height*factor)
     for table in doc.tables:
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -343,6 +345,27 @@ def apply_template_title_block(path: Path, reference: Path) -> None:
         raise ValueError("Template author rows are not separable")
     row2.getparent().remove(row2)
     cell_texts(cells[2], [name, affiliation])
+    # The source author paragraph may carry more lines (several affiliations, profile links) after a line break. The
+    # template's affiliation slot is replaced by the source runs after the bold name, keeping their breaks and
+    # hyperlinks (relationship ids are valid because the block is inserted into this same document).
+    extra = []
+    for child in author:
+        if child.tag == q("pPr") or (child.tag == q("r") and child.find(f"{q('rPr')}/{q('b')}") is not None):
+            continue
+        extra.append(child)
+    while extra and extra[0].tag == q("r") and not text(extra[0]).strip() and extra[0].find(q("br")) is None:
+        extra.pop(0)
+    if any(el.tag == q("hyperlink") or el.find(q("br")) is not None for el in extra):
+        slot = [t for t in cells[2].iter(q("t")) if (t.text or "").strip()][1]
+        run = slot.getparent()
+        for br in run.findall(q("br")):
+            run.remove(br)
+        run.remove(slot)
+        anchor = run
+        for el in extra:
+            clone = copy.deepcopy(el)
+            anchor.addnext(clone)
+            anchor = clone
     # One author: the centre cell becomes the author grid's only column, at the grid's full width, so a narrow
     # template column cannot wrap the name.
     grid = next(cells[2].iterancestors(q("tbl")))
