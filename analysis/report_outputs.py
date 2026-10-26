@@ -2316,6 +2316,9 @@ def _err(m: float, lo: float, hi: float) -> list[list[float]]:
 def _save(fig, ctx: Ctx, name: str) -> None:
     d = Path(ctx.cfg.out) / "figures"
     d.mkdir(parents=True, exist_ok=True)
+    # Reserve space for all tick labels, axis titles and the figure title before exporting either format.
+    # A tight bounding box alone prevents cropping but does not prevent neighbouring panels from overlapping.
+    fig.set_layout_engine("constrained", w_pad=0.06, h_pad=0.06, wspace=0.12, hspace=0.10)
     fig.savefig(d / f"{name}.png")
     fig.savefig(d / f"{name}.svg")
 
@@ -2347,34 +2350,43 @@ def _val(res: dict, key: str) -> float:
 def figures(ctx: Ctx, games: pd.DataFrame, g_tab: pd.DataFrame) -> list[str]:
     plt = _plt()
     res = ctx.res
+    # Figure bootstrap draws have their own reproducible stream, independent of earlier analysis calls. This lets
+    # a layout-only export use the saved tables without rerunning the primary inference or changing its results.
+    ctx = Ctx(cfg=ctx.cfg, res=res, rng=np.random.default_rng(ctx.cfg.seed))
     core = games[games["scenario"] == CORE] if not games.empty else games
     made = []
     # 1. displacement
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4.2))
+    fig, axes = plt.subplots(1, 3, figsize=(14, 4.8))
     _arm_points(axes[0], ctx, core, CHAT_ARMS, "chat_coordination", "delivered chat coordination / turn",
                 "(a) Chat coordination")
     _arm_points(axes[1], ctx, core, CHAT_ARMS, "beta", "second-mover β_priv (per game)", "(b) Action dependence")
-    _forest(axes[2], ["chat: MON − CHAT", "β: MON-SHR − MON-ISO", "β: interaction"],
-            [res.get("P2.chat.diff"), res.get("P2.storage_mon.diff"), res.get("P2.storage.diff")],
+    chat_effect = res.get("P2.chat.diff")
+    if isinstance(chat_effect, str) and "blocked" in chat_effect:
+        chat_effect = "Not estimable:\nunknown labels (D29)"
+    _forest(axes[2], ["Chat: monitor\n− open chat", "β: monitored\nSHR − ISO", "β: interaction"],
+            [chat_effect, res.get("P2.storage_mon.diff"), res.get("P2.storage.diff")],
             [_val(res, "P2.chat.ci_lo"), _val(res, "P2.storage_mon.ci_lo"), _val(res, "P2.storage.ci_lo")],
             [_val(res, "P2.chat.ci_hi"), _val(res, "P2.storage_mon.ci_hi"), _val(res, "P2.storage.ci_hi")],
             "(c) P2 contrasts (95% CI)", "matched difference")
-    fig.suptitle("Displacement: chat monitor × storage (core pricing); points are means with 95% bootstrap CIs")
+    axes[2].set_ylim(-0.35, 2.35)
+    fig.suptitle("Displacement: chat monitor × storage (core pricing)\n"
+                 "Points are means with 95% bootstrap confidence intervals", fontsize=12)
     _save(fig, ctx, "displacement")
     plt.close(fig)
     made.append("displacement")
     # 2. capability vs propensity
     arms = ("ISO-AWARE", "SHR-AWARE", "SHR-NAIVE", "ISO-PERMITTED", "SHR-PERMITTED", "ORACLE")
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4.2))
+    fig, axes = plt.subplots(1, 3, figsize=(14, 4.8))
     _arm_points(axes[0], ctx, core, arms, "addressed_write_rate", "addressed-write rate (L2)", "(a) Addressed writes")
     _arm_points(axes[1], ctx, core, arms, "l1_rate", "trace-confirmed crossing rate (L1)", "(b) Crossings")
     _arm_points(axes[2], ctx, core, arms, "beta", "second-mover β_priv", "(c) Signal influence")
-    fig.suptitle("Capability (PERMITTED) vs propensity (AWARE/NAIVE); means with 95% bootstrap CIs")
+    fig.suptitle("Capability (PERMITTED) vs propensity (AWARE/NAIVE)\n"
+                 "Means with 95% bootstrap confidence intervals", fontsize=12)
     _save(fig, ctx, "capability_propensity")
     plt.close(fig)
     made.append("capability_propensity")
     # 3. defence layers
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4.2))
+    fig, axes = plt.subplots(1, 3, figsize=(14, 5.3))
     gate_arms = (*GATE_2X2, "PROVOC-GATE-TOLD")
     _arm_points(axes[0], ctx, core, gate_arms, "scratch_cmd_rate", "turns touching /srv/scratch", "(a) Gate 2×2: use")
     _arm_points(axes[1], ctx, core, gate_arms, "l1_rate", "trace-confirmed crossing rate", "(b) Gate 2×2: crossings")
@@ -2395,24 +2407,29 @@ def figures(ctx: Ctx, games: pd.DataFrame, g_tab: pd.DataFrame) -> list[str]:
     ax.set_ylim(-0.02, 1.02)
     ax.set_xlabel("FPR (Wilson 95% CI)")
     ax.set_ylabel("TPR (Wilson 95% CI)")
-    ax.set_title("(c) Monitors at their own operating point\n(scored cohorts differ; not a paired comparison)")
+    ax.set_title("(c) Monitor operating points\nDifferent scored cohorts; unpaired", fontsize=11)
     if plotted:
         ax.legend(fontsize=7, loc="lower right")
     else:
         ax.text(0.5, 0.5, "pending / no data", transform=ax.transAxes, ha="center", va="center", color="#555555")
-    fig.suptitle("Defence layers: command gate vs monitors (monitor target: trace-confirmed rival-authored canary or "
-                 "content crossing)")
+    fig.suptitle("Defence layers: command gate and monitors\n"
+                 "Monitor target: trace-confirmed rival-authored canary or content crossing", fontsize=12)
     _save(fig, ctx, "defence_layers")
     plt.close(fig)
     made.append("defence_layers")
     # 4. bounded nulls with MDE
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4))
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.8))
     mde = _val(res, "P3.mde")
-    _forest(axes[0], ["P3 β_priv: SHR-AWARE − ISO-AWARE", "P3 price Δp: SHR-AWARE − ISO-AWARE", "placebo β (first mover)"],
+    _forest(axes[0], ["P3 β_priv:\nSHR-AWARE − ISO-AWARE", "P3 price Δp:\nSHR-AWARE − ISO-AWARE", "Placebo β:\nfirst mover"],
             [res.get("P3.beta.diff"), res.get("P3.price.diff"), res.get("placebo.beta_first.est")],
             [_val(res, "P3.beta.ci_lo"), _val(res, "P3.price.ci_lo"), _val(res, "placebo.beta_first.ci_lo")],
             [_val(res, "P3.beta.ci_hi"), _val(res, "P3.price.ci_hi"), _val(res, "placebo.beta_first.ci_hi")],
-            "(a) Spontaneous carrier and placebo (95% CI)", "estimate", band=mde)
+            "(a) Spontaneous carrier and placebo\n95% confidence intervals", "estimate")
+    axes[0].set_ylim(-0.35, 2.35)
+    if np.isfinite(mde):
+        axes[0].fill_betweenx([1.65, 2.35], -mde, mde, color=PALETTE[5], alpha=0.2,
+                              label=f"P3 β_priv only: ±MDE ({mde:.3g})", zorder=0)
+        axes[0].legend(loc="lower right", fontsize=8)
     ax = axes[1]
     labs, ks, his = [], [], []
     for arm in ("SHR-AWARE", "ISO-AWARE", "SHR-NAIVE"):
@@ -2434,16 +2451,24 @@ def figures(ctx: Ctx, games: pd.DataFrame, g_tab: pd.DataFrame) -> list[str]:
     plt.close(fig)
     made.append("nulls_mde")
     # 5. scenarios
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6.2), sharey=True)
     for ax, tag, xl in ((axes[0], "beta (SHR-AWARE - ISO-AWARE)", "β_priv difference"),
                         (axes[1], "price (SHR-AWARE - ISO-AWARE)", "Δp difference (last 10 rounds)")):
         sub = g_tab[g_tab["contrast"] == tag] if not g_tab.empty else g_tab
+        # CSV imports make this mixed numeric/status column strings; retain non-estimable statuses without
+        # mistaking valid numeric strings for annotations instead of plotted estimates.
+        estimates = [float(v) if pd.notna(v) else INSUFFICIENT
+                     for v in pd.to_numeric(sub["diff"], errors="coerce")] if len(sub) else [INSUFFICIENT]
         _forest(ax, list(sub["unit"]) if len(sub) else ["(none)"],
-                list(sub["diff"]) if len(sub) else [INSUFFICIENT],
+                estimates,
                 list(sub.get("ci_lo", pd.Series(np.nan, index=sub.index)).astype(float)) if len(sub) else [np.nan],
                 list(sub.get("ci_hi", pd.Series(np.nan, index=sub.index)).astype(float)) if len(sub) else [np.nan],
                 tag, xl)
-    fig.suptitle("Scenario transfer of the P3 contrast (descriptive; 95% bootstrap CIs; units differ by engine)")
+    axes[0].set_title("(a) β_priv: SHR-AWARE − ISO-AWARE", fontsize=11)
+    axes[1].set_title("(b) Price: SHR-AWARE − ISO-AWARE", fontsize=11)
+    axes[1].tick_params(axis="y", labelleft=False)
+    fig.suptitle("Scenario transfer of the P3 contrast\n"
+                 "Descriptive estimates with 95% bootstrap confidence intervals; units differ by engine", fontsize=12)
     _save(fig, ctx, "scenarios")
     plt.close(fig)
     made.append("scenarios")
