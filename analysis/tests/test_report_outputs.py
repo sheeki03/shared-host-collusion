@@ -526,6 +526,7 @@ def test_s6_denominators_and_paired_table_use_the_keys_monitors_writes(s6_tool, 
         assert paired.loc[m, "judged games"] == r["S6.paired.n_games"]       # D36: games every monitor scored
     text = (tmp_path / "ro" / "tables" / "monitors_paired.md").read_text()
     assert not text.startswith("_No data yet._") and "as in `monitors_headline`" in text
+    assert f"(`game_judged`, {r['S6.paired.n_games']} games)" in text
     # a metrics file from another monitors run, or none, leaves the denominators pending (never a guess)
     other = tmp_path / "other"
     other.mkdir()

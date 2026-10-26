@@ -21,6 +21,7 @@ from pathlib import Path
 import pandas as pd
 from inspect_ai.log import list_eval_logs, read_eval_log
 
+from analysis import relabel
 from analysis.coding import INTERNAL_COLUMNS, extract_candidates
 
 SCALARS = ("action", "payoff", "own_priv", "own_com_err", "rival_priv", "rival_com_err", "collusion_index")
@@ -90,7 +91,9 @@ def load(log_dir: str, *, cohort: str = "confirmatory", allow_exclusions: bool =
     rounds, games, calls, chat, gate, scratch_events, outputs, candidates, exclusions = [], [], [], [], [], [], [], [], []
     bad_selected = []
     for info in list_eval_logs(log_dir):
-        log = read_eval_log(info)
+        # Apply the current detector for standalone exports too. game_set's injected reader defers relabelling
+        # to this boundary, so its selected-game path and this public loader each rebuild a log exactly once.
+        log = relabel.relabel_log(read_eval_log(info))
         for s in log.samples or []:
             meta = s.metadata or {}
             res = meta.get("result") or {}

@@ -298,8 +298,9 @@ class Game:
                 data["industry_report"] = round_floats(self.engine.oracle_fields(self.spec["scenario_id"], draw, f),
                                                        self.decimals)
             await ensure_inbox(f)
-            self.inbox_texts[f][t] = json.dumps(data, indent=1)
-            await shell.root_write(f, f"{INBOX}/round_{t:02d}.json", self.inbox_texts[f][t], mode="444",
+            text = json.dumps(data, indent=1)
+            self.__dict__.setdefault("inbox_texts", {g: {} for g in FIRMS})[f][t] = text
+            await shell.root_write(f, f"{INBOX}/round_{t:02d}.json", text, mode="444",
                                    owner="0:0")
 
     # -- model calls ------------------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 """Cohort and completeness gates for loading Inspect-shaped sample logs."""
 from __future__ import annotations
 
+from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
@@ -72,3 +73,62 @@ def test_sample_error_and_missing_evidence_are_not_negative_labels(monkeypatch):
     assert len(exclusions) == 2
     assert exclusions.reason.str.contains("sample error").any()
     assert exclusions.reason.str.contains("structured communication evidence").any()
+
+
+def _saved_own_inbox_false_positive():
+    """A saved pre-D36 game whose rival copied inbox JSON into scratch; A only reads its own inbox."""
+    from analysis import relabel
+
+    s = sample("deep", 1000)
+    res = s.metadata["result"]
+    for row in res["rows"]:
+        row.update(canary=f"CX-{row['firm']}-{row['t']}-unique-private-id",
+                   crossing_canary=False, crossing_content=False, name_exposure=False,
+                   crossing_status="negative", crossing_evidence=[])
+    boxes = relabel.inboxes(s.metadata, res)
+    path = "/srv/scratch/rival.json"
+    rec = {"path": path, "uid": 1002, "content": boxes["B"][1], "sha256": "copied-inbox"}
+    res["snapshots"] = [
+        {"t": 1, "firm": "B", "order": 1, "changed": [{**rec, "view": "B"}], "gone": []},
+        {"t": 1, "firm": "A", "order": 2, "changed": [{**rec, "view": "A"}], "gone": []},
+    ]
+    res["outputs"]["A"] = [{"t": 1, "cmd": "cat /home/agent/inbox/round_01.json", "output": boxes["A"][1]}]
+    old = relabel.labels(res, shared=True)  # without own inboxes, as the pre-D36 detector saw it
+    assert old[("A", 1)]["content"]
+    for row in res["rows"]:
+        if (row["firm"], row["t"]) not in old:
+            continue
+        for col, label in relabel.LABEL_FIELDS.items():
+            row[col] = old[(row["firm"], row["t"])][label]
+    return s
+
+
+@pytest.mark.parametrize("use_game_set", [False, True])
+def test_standalone_and_selected_loaders_correct_saved_traces_once(monkeypatch, use_game_set):
+    from analysis import game_set, relabel
+
+    s = _saved_own_inbox_false_positive()
+    monkeypatch.setattr(dataset, "list_eval_logs", lambda _: [SimpleNamespace(name="saved.eval")])
+    monkeypatch.setattr(dataset, "read_eval_log",
+                        lambda _: SimpleNamespace(status="success", samples=[deepcopy(s)]))
+    real_labels, calls = relabel.labels, []
+
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return real_labels(*args, **kwargs)
+
+    monkeypatch.setattr(relabel, "labels", counted)
+    tables = game_set.load_tables(["unused"]).tables if use_game_set else dataset.load("unused")
+    row = tables["rounds"].query("firm == 'A' and t == 1").iloc[0]
+    assert row["crossing_content_saved"] and not row["crossing_content"]
+    assert row["crossing_status"] == "unknown" and not row["crossing_canary"]
+    assert len(calls) == 1
+
+
+def test_standalone_loader_can_explicitly_reproduce_saved_labels(monkeypatch):
+    s = _saved_own_inbox_false_positive()
+    patch_logs(monkeypatch, s)
+    monkeypatch.setenv("SHC_TRACE_RELABEL", "0")
+    row = dataset.load("unused")["rounds"].query("firm == 'A' and t == 1").iloc[0]
+    assert row["crossing_content"] and row["crossing_status"] == "positive"
+    assert "crossing_content_saved" not in row

@@ -126,6 +126,13 @@ S6_SUBJECT_CONTRACT = (
       for m in ("llm_per_firm", "llm_joint", "active_beta") for f in ("tpr", "fpr")),
     *(f"S6.subject.{g}.n_judged_games" for g in monitors.SUBJECT_GROUPS),
 )
+# D36's common-game comparison is used in the report prose as well as its table. Keep every paired metric and
+# denominator explicit when monitor results are unavailable, rather than leaving unresolved report placeholders.
+S6_PAIRED_CONTRACT = (
+    *(f"S6.{m}.game_judged.{f}" for m in MONITORS for f in S6_FIELDS),
+    "S6.paired.n_games",
+    *(f"S6.paired.{truth}n_{cls}_games" for truth in ("", "transfer.") for cls in ("pos", "neg", "unknown")),
+)
 CONTRACT_KEYS = (
     "meta.n_games", "meta.n_complete", "meta.n_excluded", "meta.n_rounds", "meta.hosts", "meta.preliminary",
     "meta.freeze_commit", "meta.total_cost_usd", "meta.parse_failure_rate",
@@ -145,7 +152,7 @@ CONTRACT_KEYS = (
     *(f"pc.chat_iso.dp.{f}" for f in (*_EFF, "n_pairs", "status")),
     *(f"pc.oracle.beta_priv.{f}" for f in ("est", "ci_lo", "ci_hi", "n_games", "status")),
     "pc.failed_models", "pc.unverified_models", *(f"pc.{c}.failed_models" for c in PC_CONTROLS_CONTRACT),
-    *S6_SUBJECT_CONTRACT,
+    *S6_SUBJECT_CONTRACT, *S6_PAIRED_CONTRACT,
     # other keys report/REPORT.md cites that only some runs write (labels present, an estimable P3 contrast); here
     # so that a run without them shows 'pending' instead of an unresolved placeholder (26 Oct, integration check)
     "L2.label_coverage", "L2.labels_scratch.unknown", "L2.labels_chat.unknown",
@@ -1234,7 +1241,7 @@ def _s6_pending(res: dict, reason: str) -> None:
     for m in MONITORS:
         for f in S6_FIELDS:
             res[f"S6.{m}.{f}"] = res[f"S6.l1.{m}.{f}"] = PENDING
-    for k in S6_SUBJECT_CONTRACT:
+    for k in (*S6_SUBJECT_CONTRACT, *S6_PAIRED_CONTRACT):
         res[k] = PENDING
     _s6_denom_pending(res)
     res["S6.status"] = res["S6.source"] = PENDING
@@ -1419,7 +1426,8 @@ def s6_monitors(ctx: Ctx, games: pd.DataFrame, *, log_status: Mapping[str, Any] 
         ctx.warn(f"S6: {len(skipped)} monitor_results.json keys not copied (not S6, reserved or not scalar): "
                  f"{skipped[:4]}")
     missing = [f"S6.{p}{m}.{f}" for p in ("", "l1.") for m in MONITORS for f in S6_FIELDS
-               if f"S6.{p}{m}.{f}" not in mapped] + [k for k in S6_SUBJECT_CONTRACT if k not in mapped]
+               if f"S6.{p}{m}.{f}" not in mapped] + [
+                   k for k in (*S6_SUBJECT_CONTRACT, *S6_PAIRED_CONTRACT) if k not in mapped]
     for k in missing:
         mapped[k] = PENDING
     not_run = mapped.get("S6.judge.not_run")
@@ -1546,7 +1554,7 @@ def write_s6_tables(ctx: Ctx, src: S6Source) -> None:
         paired = s6_paired_table(res)
         infix, truth = s6_paired_truth(res)
         paired_body = (md_table(paired) + "\nAll rows use the same selected judge-game set (`game_judged`, "
-                       f"{_fmt(res.get('S6.judge.n_games'))} games); rates are descriptive for that selected set. "
+                       f"{_fmt(res.get('S6.paired.n_games'))} games); rates are descriptive for that selected set. "
                        f"Ground truth: {truth}"
                        + (". Not every monitor has transfer-truth results at the judged-game level (an older "
                           "`analysis/monitors.py` run, or a monitor that was not run), so these rates are not on the "

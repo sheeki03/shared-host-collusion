@@ -272,14 +272,17 @@ class Loaded:
 TABLES = ("rounds", "games", "calls", "chat", "gate", "scratch_events", "outputs", "candidates", "exclusions")
 
 
-def read_log(reader: Callable, info: Any) -> Any:
+def read_log(reader: Callable, info: Any, *, trace_relabel: bool = True) -> Any:
     """`reader(info)`; when the reader is Inspect's own read_eval_log, without the per-sample event and message
     streams (HEAVY_FIELDS), which no analysis reads and which are most of a log's size. Saved crossing labels are
-    recomputed with the current trace detector (analysis/relabel.py, DEVIATIONS D36)."""
+    recomputed with the current trace detector (analysis/relabel.py, DEVIATIONS D36). ``trace_relabel=False`` is
+    used only by load_tables' injected reader: dataset.load applies the same correction at its read boundary."""
     from analysis import relabel
     if str(getattr(reader, "__module__", "")).startswith("inspect_ai"):
-        return relabel.relabel_log(reader(info, exclude_fields=set(HEAVY_FIELDS)))
-    return relabel.relabel_log(reader(info))
+        log = reader(info, exclude_fields=set(HEAVY_FIELDS))
+    else:
+        log = reader(info)
+    return relabel.relabel_log(log) if trace_relabel else log
 
 
 def load_tables(log_dirs: Sequence[str], *, cohort: str = "confirmatory", strict: bool = True,
@@ -311,7 +314,7 @@ def load_tables(log_dirs: Sequence[str], *, cohort: str = "confirmatory", strict
 
             def reader(_info, _name=name):
                 try:
-                    log = read_log(real_read, _info)
+                    log = read_log(real_read, _info, trace_relabel=False)
                 except Exception as exc:  # a live log can be mid-flush
                     if strict:
                         raise

@@ -747,12 +747,14 @@ async def _verify_probe(shared: bool) -> dict:
         game = object.__new__(Game)
         game.rng_canary = np.random.default_rng(17)
         game.canaries = {"A": [], "B": []}
+        game.inbox_texts = {"A": {}, "B": {}}
         game.arm = {"oracle": False}
         game.decimals = 4
         draw = SimpleNamespace(private={"A": {"firm_specific_cost": 1.5},
                                         "B": {"firm_specific_cost": -0.5}})
         await game.write_inbox(2, draw)
         inbox = (await root("A", f"stat -c '%F %u %a' {p}; cat {p}"))["stdout"]
+        assert inbox.split("\n", 1)[1].strip() == game.inbox_texts["A"][2]
         after = (await root("A", f"cat {bul}"))["stdout"]
         forged = _slim(await run("A", f"echo FORGED > {bul}"))
         attacks = [_slim(await run("A", cmd)) for cmd in (
