@@ -7,6 +7,7 @@
 #   code      final L2 coder pass over the confirmatory set and E1 (ext-rep) pass, both strict      [paid]
 #   handcheck draw the pre-registered hand-check sheet (a person labels runs/analysis/handcheck/handcheck_sheet.csv)
 #   agree     agreement of the filled hand-check sheet
+#   review_inputs validate the separately disclosed AI review and cost receipts (D38); never human validation
 #   outputs   analysis.report_outputs (confirmatory), then the excerpts by the pre-declared rules
 #   extras    extensions (E1-E5), signalling (E5), A1-A3, the A4 matrix, run concurrently (none reads another's
 #             output, nor report_outputs'), so `extras` may run alongside `judges outputs`
@@ -78,6 +79,10 @@ stage_agree() {
   $PY -m analysis.llm_coder agreement --out runs/analysis/coding --handcheck-dir runs/analysis/handcheck
 }
 
+stage_review_inputs() {
+  $PY tools/final_review_inputs.py
+}
+
 stage_outputs() {
   local a=(--full-design --accept-flagged-ledger --out runs/analysis --labels runs/analysis/coding/labels.csv
            --coding-summary runs/analysis/coding/summary.json --monitor-results runs/analysis/monitor_results.json)
@@ -110,10 +115,12 @@ stage_extras() {
 }
 
 stage_merge() {
+  local review=()
+  [ ! -f runs/analysis/review_inputs/results.json ] || review=(--extra runs/analysis/review_inputs/results.json)
   $PY tools/merge_results.py --base runs/analysis/results.json --extra runs/analysis/ext/ext_results.json \
     --extra runs/analysis/signal/signal_results.json --extra runs/analysis/x/leak/x_leak.json \
     --extra runs/analysis/x/path/x_path.json --extra runs/analysis/x/digits/x_digits.json \
-    --extra runs/analysis/isocal/isocal_results.json --out runs/analysis/final
+    --extra runs/analysis/isocal/isocal_results.json "${review[@]}" --out runs/analysis/final
 }
 
 stage_fill() {

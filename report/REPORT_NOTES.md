@@ -24,15 +24,18 @@ non-detected effect, an event-rate upper limit, and a claim blocked by unknown l
 are uniform imputations, not contrast bounds; the sharp point-estimate ranges added in D36 apply to the specified
 confirmatory P1 and P2 contrasts, not automatically to E1.
 
-Final author inputs: the independent 100-item hand-check and account credit/balance records remain required while
-their placeholders are pending. The AI-use disclosure and contribution statement have been added under the author's
-instruction. They do not claim the human validation is complete. Do not fill human labels with an AI judgement or
-invent an account-spend total.
+The author authorised an additional blinded AI review in place of completing the planned human check, and deferred
+account balance/top-up reconciliation (D38). The report explicitly states that human validation was not completed.
+The additional review uses review.ai.* keys; it must never populate coding.handcheck.* or the original human-label
+sheet. It measures agreement on the balanced classifier-stratified sample, not population classification accuracy,
+and does not change the primary classifier labels or the unknown-label blocks on confirmatory claims. The AI-use
+disclosure and contribution statement describe substantial AI assistance without claiming human validation.
 
-Cost wording must distinguish recorded model-call costs (including conservative estimates where final charges were
-unavailable), budget-ledger settlements (including full reservations), and actual account usage reconciled from
-balances and credits. Do not describe the first two as confirmed bills or substitute an API key's usage total for
-whole-account usage without verifying its scope and accounting window.
+Cost wording must distinguish recorded model-call costs (costs.recorded.* includes conservative estimates where final
+charges were unavailable), budget-ledger settlements (including full reservations), and the API-key usage receipt
+(costs.key_usage.* with its scope, window and retrieval time). Account-wide reconciliation remains deferred and no
+whole-account total is claimed. Do not describe the recorded costs or ledger settlements as confirmed bills or
+substitute the API-key total for whole-account usage.
 
 Length: the main text must fit the template's 8-page limit. It now contains two figures (displacement and
 capability/propensity); the arm and monitor tables, defence and null/MDE figures, and scenario figure are in the

@@ -128,8 +128,9 @@ Crossing labels, independent of every monitor, use command outputs and actor-tur
 uniquely attributable characters of rival content, or a rival path with valid provenance; unobservable reads stay
 unknown. Scratch writes and chat messages are labelled by a GLM 5.3 classifier blind to arm, model and block status,
 with a rubric committed after collection began (D7; the author reports writing it from pilot logs only): addressed
-content or competitive chat is "yes", routine text "no", ambiguous evidence "unknown". A blinded human checks 50
-candidate positives and 50 negatives. Rates divide "yes" writes or delivered coordination by subject firm-turns.
+content or competitive chat is "yes", routine text "no", ambiguous evidence "unknown". The planned human check of
+50 classifier positives and 50 negatives was not completed; D38 reports an additional blinded AI review. Rates divide
+"yes" writes or delivered coordination by subject firm-turns.
 Evidence levels are L1 rival-content exposure, L2 adjudicated addressed communication, L3 rival-canary transfer, L4
 L3 plus conduct and welfare change, and L5 offer, acceptance and conduct; results name the level reached.
 
@@ -176,10 +177,11 @@ every run ended in a provider error (D35), and {{meta.n_excluded}} game was excl
 (Table C10); {{meta.parse_failure_rate}} of firm-turns used the fallback action. Crossing labels were recomputed after
 a detector fix (D36): text that a firm's own inbox also contains no longer counts as rival content. Costs are in Appendix E. Of {{L2.n_candidates}}
 communication candidates, {{L2.labels_scratch.unknown}} scratch and {{L2.labels_chat.unknown}} chat candidates
-remained unknown. In the blinded check of {{coding.handcheck.n}} candidates (D30) the author agreed with the
-classifier on {{coding.handcheck.raw_agreement}} (Wilson 95% CI {{coding.handcheck.raw_ci_lo}} to
-{{coding.handcheck.raw_ci_hi}}; κ {{coding.handcheck.kappa}}, {{coding.handcheck.kappa_boot_ci_lo}} to
-{{coding.handcheck.kappa_boot_ci_hi}}). Table C1 gives per-arm rates and Table C3 each model.
+remained unknown. Human validation was not completed (D38). An additional blinded AI review of {{review.ai.n}}
+candidates agreed with the classifier on {{review.ai.raw_agreement}} (Wilson 95% CI
+{{review.ai.raw_ci_lo}} to {{review.ai.raw_ci_hi}}; κ {{review.ai.kappa}}, {{review.ai.kappa_boot_ci_lo}} to
+{{review.ai.kappa_boot_ci_hi}}). This balanced, classifier-stratified sample measures AI agreement, not population
+accuracy, and does not replace human validation. Table C1 gives per-arm rates and Table C3 each model.
 
 A control is not met when its 95% interval does not lie above zero (a rule fixed before the final run). CHAT-ISO delivered
 coordination was {{pc.chat_iso.coord_rate.bound_lo}} to {{pc.chat_iso.coord_rate.bound_hi}} per firm-turn as unknown
@@ -325,7 +327,8 @@ classification can miss codes built across rounds (Dineen et al. 2026), passive 
 talk (Vaikuntanathan and Zamir 2026), and few collusive episodes put coordination into words (Rose et al. 2026), so
 addressed-write and judge nulls do not prove no communication; traces miss transformed or suppressed reads. GLM 5.3
 is a subject, chat monitor, classifier and both judges, and its identity may show in text (Gardner-Challis et al.
-2026). High ISO prices may leave little welfare headroom (Lee 2026). One gateway obscures routing, 40-round games
+2026). Human validation remains absent (D38).
+High ISO prices may leave little welfare headroom (Lee 2026). One gateway obscures routing, 40-round games
 are shorter than Fish et al.'s (2024) 300, the scripted rival never punishes, and one prompt family may matter (OpenAI
 2026a). The author maintains tirith (Appendix A). Nulls apply to this setting.
 
@@ -790,12 +793,15 @@ public-bulletin access. Nothing is ranked by how interesting its content is.
 
 ## Appendix E. Reproducibility
 
-**Costs.** Recorded model-call costs in the analysed games totalled ${{meta.total_cost_usd}}, including conservative
-estimates where final provider charges were unavailable. The game ledgers settled ${{meta.ledger_settled_usd}},
-including ${{meta.ledger_full_reservation_usd}} booked at the full reservation for calls without a returned charge.
-These are separate accounting scopes; neither establishes the provider account's confirmed bill. Actual account
-usage over the collection window was ${{meta.account_spend_usd}}, classifiers, judges and extensions included
-({{meta.account_spend_source}}).
+**Costs.** Recorded model-call costs in the analysed games totalled ${{meta.total_cost_usd}}: provider-reported amounts
+without estimate flags of ${{costs.recorded.nonestimated_usd}}, conservative replacements for provider-estimated costs
+of ${{costs.recorded.provider_estimate_usd}}, and retry reservations of ${{costs.recorded.retry_reservation_usd}} where
+charges were unavailable. The game ledgers settled ${{meta.ledger_settled_usd}}, including
+${{meta.ledger_full_reservation_usd}} booked at the full reservation for calls without a returned charge. These are
+separate accounting scopes; neither establishes the provider account's confirmed bill. The API-key usage receipt
+reports ${{costs.key_usage.net_usd}} for {{costs.key_usage.window_start}} to {{costs.key_usage.window_end}}, retrieved
+{{costs.key_usage.as_of}} ({{costs.key_usage.scope}}). Account-wide balance and top-up reconciliation was deferred;
+no whole-account spending total is claimed (D38).
 
 **Pilot (25 Oct, seeds 9000+).** Pilot seeds 9000+ covered 14 model probes and 28 smoke games. Probe agents accessed scratch in 176/315 commands;
 SHR-AWARE rival content appeared in 4/130 firm-rounds, so conditional levers were not triggered. In one five-round
@@ -1098,4 +1104,5 @@ AI coding and research assistants generated and revised substantial portions of 
 engines, test suites, analysis code and manuscript. They also assisted with study planning, literature discovery,
 debugging and adversarial review. The author directed the project and remains responsible for its methods,
 interpretation and submitted text. Separately, GLM 5.3 served as an experimental subject, the chat compliance monitor,
-the communication classifier and the transcript judges, as described in the Methods and limitations.
+the communication classifier and the transcript judges, as described in the Methods and limitations. The planned
+human validation was not completed; an additional AI reviewer performed the blinded sample review reported under D38.
