@@ -5,6 +5,11 @@ against the frozen hand-check key using llm_coder.handcheck_agreement; its human
 only to review.ai.*. No human sheet, coding.handcheck key, candidate text, identifier or review note is exported.
 Cost components retain their actual scopes: saved analysed trajectories and an API-key usage receipt. Neither is
 presented as a reconciled account-wide bill. Default output: runs/analysis/review_inputs/results.json.
+
+--human-validation-completed (D40) is the pre-registered route instead: the human hand-check agreement must already
+exist (llm_coder agreement -> runs/analysis/handcheck/agreement.json, reported as coding.handcheck.* by
+report_outputs). The AI review is then neither read nor reported: no review.ai.* key is written. Only
+review.human.status, the deferred review.account.status and the cost keys are emitted.
 """
 from __future__ import annotations
 
@@ -24,6 +29,8 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_AI = ROOT / "runs/analysis/ai-review"
 DEFAULT_KEY = ROOT / "runs/analysis/coding/handcheck_key.csv"
 DEFAULT_COSTS = ROOT / "runs/analysis/costs"
+DEFAULT_HANDCHECK = ROOT / "runs/analysis/handcheck"
+HUMAN_STATUS = "completed (independent human reviewer)"
 DEFAULT_OUT = ROOT / "runs/analysis/review_inputs/results.json"
 AI_STATS = ("n", "n_agree", "raw_agreement", "raw_ci_lo", "raw_ci_hi", "kappa", "kappa_boot_ci_lo",
             "kappa_boot_ci_hi", "kappa_boot_valid", "n_boot")
@@ -100,6 +107,22 @@ def ai_review(sheet: Path, key: Path, reviewer: Path, *, allow_incomplete: bool 
     return public
 
 
+def human_review(agreement: Path, human_sheet: Path, ai_sheet: Path) -> dict[str, Any]:
+    """Check that the pre-registered human agreement exists; its statistics stay with report_outputs (coding.*)."""
+    if not agreement.exists() or not human_sheet.exists():
+        raise ValueError("human route needs the filled hand-check sheet and its agreement.json (run llm_coder agreement)")
+    if ai_sheet.exists() and sha256(ai_sheet) == sha256(human_sheet):
+        raise ValueError("the hand-check sheet is byte-identical to the AI review sheet; it is not a human review")
+    agree = read_object(agreement)
+    if agree.get("n") != 100 or isinstance(agree.get("n"), bool):
+        raise ValueError("human agreement must cover all 100 frozen review items")
+    for k, lo, hi in (("raw_agreement", 0, 1), ("kappa", -1, 1)):
+        v = agree.get(k)
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or not lo <= v <= hi:
+            raise ValueError(f"human agreement {k} must be finite in [{lo}, {hi}]")
+    return {"review.human.status": HUMAN_STATUS}
+
+
 def cost_inputs(recorded_path: Path, usage_path: Path) -> dict[str, Any]:
     recorded, receipt = read_object(recorded_path), read_object(usage_path)
     sources = recorded.get("cost_by_source")
@@ -165,10 +188,15 @@ def cost_inputs(recorded_path: Path, usage_path: Path) -> dict[str, Any]:
 
 
 def build(sheet: Path, key: Path, reviewer: Path, recorded: Path, usage: Path, *, allow_incomplete: bool = False,
-          n_boot: int = 2000, seed: int = 0) -> dict[str, Any]:
-    result = {"review.human.status": "not performed (D38)", "review.account.status": "deferred (D38)",
-              **ai_review(sheet, key, reviewer, allow_incomplete=allow_incomplete, n_boot=n_boot, seed=seed),
-              **cost_inputs(recorded, usage)}
+          n_boot: int = 2000, seed: int = 0, human_validation_completed: bool = False,
+          agreement: Path = DEFAULT_HANDCHECK / "agreement.json",
+          human_sheet: Path = DEFAULT_HANDCHECK / "handcheck_sheet.csv") -> dict[str, Any]:
+    if human_validation_completed:
+        review = human_review(agreement, human_sheet, sheet)   # the AI sheet is only hashed, never parsed
+    else:
+        review = {"review.human.status": "not performed (D38)",
+                  **ai_review(sheet, key, reviewer, allow_incomplete=allow_incomplete, n_boot=n_boot, seed=seed)}
+    result = {**review, "review.account.status": "deferred (D38)", **cost_inputs(recorded, usage)}
     if any(not k.startswith(("review.", "costs.")) or isinstance(v, (dict, list)) for k, v in result.items()):
         raise ValueError("review inputs must be flat aggregate review/cost keys")
     return result
@@ -183,13 +211,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--provider-usage", type=Path, default=DEFAULT_COSTS / "provider_usage_20261026.json")
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--allow-incomplete", action="store_true", help="only missing AI files become explicit pending values; invalid data still fail")
+    ap.add_argument("--human-validation-completed", action="store_true",
+                    help="D40: the human hand-check is done (agreement.json exists); write no review.ai.* keys")
+    ap.add_argument("--agreement", type=Path, default=DEFAULT_HANDCHECK / "agreement.json")
+    ap.add_argument("--human-sheet", type=Path, default=DEFAULT_HANDCHECK / "handcheck_sheet.csv")
     a = ap.parse_args(argv)
     protected = [a.sheet, a.reviewer, a.key, a.recorded_costs, a.provider_usage,
                  ROOT / "runs/analysis/handcheck/handcheck_sheet.csv", ROOT / "runs/analysis/handcheck/agreement.json",
-                 ROOT / "runs/analysis/coding/labels.csv"]
+                 ROOT / "runs/analysis/coding/labels.csv", a.agreement, a.human_sheet]
     if a.out.resolve() in {p.resolve() for p in protected}:
         raise ValueError("output must not overwrite an input or human/coder validation artifact")
-    result = build(a.sheet, a.key, a.reviewer, a.recorded_costs, a.provider_usage, allow_incomplete=a.allow_incomplete)
+    result = build(a.sheet, a.key, a.reviewer, a.recorded_costs, a.provider_usage, allow_incomplete=a.allow_incomplete,
+                   human_validation_completed=a.human_validation_completed, agreement=a.agreement,
+                   human_sheet=a.human_sheet)
     a.out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=a.out.parent, delete=False) as f:
         tmp = Path(f.name)
@@ -200,7 +234,8 @@ def main(argv: list[str] | None = None) -> int:
             tmp.unlink(missing_ok=True)
             raise
     os.replace(tmp, a.out)
-    print(f"{len(result)} public aggregate keys -> {a.out}; human validation not performed, account reconciliation deferred")
+    human = "human validation completed" if a.human_validation_completed else "human validation not performed"
+    print(f"{len(result)} public aggregate keys -> {a.out}; {human}, account reconciliation deferred")
     return 0
 
 

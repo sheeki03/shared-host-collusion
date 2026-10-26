@@ -370,8 +370,8 @@ Characterizing and Exploiting Page-Cache SCA Leakage Across Containers and VMs. 
 Agrawal, K., Teo, V., Vazquez, J. J., Kunnavakkam, S., Srikanth, V., and Liu, A. (2025). Evaluating LLM Agent
 Collusion in Double Auctions. arXiv:2507.01413.
 
-Alkur, J. (2026). Do impossible tasks make AI agents collude? Lab experiments and a field test on the public
-agent-wiki record. AI Collusion Research Sprint (Apart Research), concurrent work.
+Alkur, J. (2026). It Takes Two Stuck Agents: Impossible Tasks Make AI Agents Answer Each Other Only When the Helpers Are
+Stuck Too. AI Collusion Research Sprint (Apart Research), concurrent work.
 https://github.com/Alkur123/apart-collusion-impossible-tasks
 
 Bonjour, T., Aggarwal, V., and Bhargava, B. (2022). Information Theoretic Approach to Detect Collusion in Multi-Agent
@@ -400,8 +400,7 @@ Gal-Or, E. (1986). Information Transmission: Cournot and Bertrand Equilibria. Re
 85-92. doi:10.2307/2297593
 
 Gardner-Challis, N., Bostock, J., Kozhevnikov, G., Sinclaire, M., Velja, J., Abate, A., and Griffin, C. (2026). When
-can we trust untrusted monitoring? A safety case sketch across collusion strategies. arXiv:2602.20628 (poster, NeurIPS
-2026 Workshop on Agents in the Wild).
+can we trust untrusted monitoring? A safety case sketch across collusion strategies. arXiv:2602.20628 (a version was presented as a poster at the NeurIPS 2026 Workshop on Agents in the Wild).
 
 Greenblatt, R., Shlegeris, B., Sachan, K., and Roger, F. (2023). AI Control: Improving Safety Despite Intentional
 Subversion. arXiv:2312.06942.
@@ -474,8 +473,9 @@ Emergent Cheating and Whistleblowing in Autonomous Research Swarms. arXiv:2609.0
 Pandey, D., Duttagupta, S., Zou, X., and Bhati, A. S. (2026). Don't Judge an Agent by Its Messages: Private-State
 Leakage under Passive Monitoring of Agent Communication. arXiv:2610.25032.
 
-Peist, M., Romero, J., and Sauer, L. (2025). Algorithmic pricing with LLMs: prompt code (MIT licence), as adapted in
-the Poseidon Research collusion hackathon starter.
+Peist, M., Romero, J., and Sauer, L. (2025). Algorithmic Collusion and the Limits of Coordination. Master's project,
+Barcelona School of Economics; code (MIT licence) at https://github.com/luciasauer/algorithmic_pricing_llms, as adapted
+in the Poseidon Research collusion hackathon starter.
 https://github.com/poseidon-research/collusion_hackathon/tree/main/algorithmic-pricing-llms
 
 Radev, N., Haas, L., Arnav, B., and Bernabeu-Pérez, P. (2026). The Best-Laid SCHEMEs: Coordinated Sabotage and
@@ -510,7 +510,7 @@ Tailor, O. (2025). Audit the Whisper: Detecting Steganographic Collusion in Mult
 Tran, H., and Yu, H. (2026). Is Anyone Enforcing the Cartel? What Reinforcement Learning Teaches LLM Agents in
 Markets. arXiv:2610.28787.
 
-UK AI Security Institute (2024). Inspect: A Framework for Large Language Model Evaluations. Software.
+UK AI Security Institute (2024). Inspect AI: Framework for Large Language Model Evaluations. Software.
 https://github.com/UKGovernmentBEIS/inspect_ai
 
 US Department of Justice, Antitrust Division (1994). United States v. Airline Tariff Publishing Company et al., Civil

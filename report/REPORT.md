@@ -10,22 +10,24 @@ With Apart Research
 
 ## Abstract
 
-Rival firms' AI agents may share writable infrastructure. We test whether their large language model (LLM) agents
-use it to exchange information or coordinate. Two pricing agents play a repeated logit Bertrand game in separate
+Rival firms' LLM agents may share writable infrastructure. We test whether they use it to
+exchange information or coordinate. Two pricing agents play a repeated logit Bertrand game in separate
 no-network containers. A scratch directory is shared or private; prompts and market draws are matched. Canaries
 trace crossings, and price regressions test response to the rival's randomised private cost. Seventeen
-pre-registered arms vary awareness, permission, monitored chat, a scripted rival's offer and a command gate. Of 14
-planned configurations of 13 models, 13 completed; we analyse {{meta.n_complete}} games ({{meta.n_rounds}} rounds) over
+pre-registered arms vary awareness, permission, monitored chat, a scripted rival's offer and a command gate built on
+tirith, the author's open-source agent-security tool. Of 14
+planned configurations of 13 models, 13 completed; we analyse {{meta.n_complete}} games over
 ten framings on five engines. When permitted, agents did not address their rival through the shared folder more than
 in matched private-storage games (interaction {{P1.l2.unknown_range_lo}} to {{P1.l2.unknown_range_hi}} over every
 assignment of unclassifiable writes); they wrote rival-addressed notes in both. Unprompted, rival canaries crossed in at
 least {{L3.game_rate_all_scenarios.SHR-AWARE.k}} of {{L3.game_rate_all_scenarios.SHR-AWARE.n_total}} shared-folder games,
 but shared storage did not detectably raise price dependence on the rival's private cost ({{P3.beta.diff}},
 {{P3.beta.ci_lo}} to {{P3.beta.ci_hi}}). Monitoring cut delivered chat coordination; no shift into storage was
-detected. A command gate blocked {{S2.block_rate}} of checked commands without detected evasion. On the same games,
-LLM transcript judges caught {{S6.llm_per_firm.game_judged.tpr}} of trace-confirmed crossings at a false-positive rate
-of {{S6.llm_per_firm.game_judged.fpr}}, while a path rule also flagged {{S6.tirith_path.game_judged.fpr}} of games
-without one. Private storage removed the file channel, but scripted probes still passed bits through host memory
+detected. The tirith gate blocked {{S2.block_rate}} of checked commands; gated agents used the folder less, without
+detected evasion. LLM transcript
+judges caught {{S6.llm_per_firm.game_judged.tpr}} of trace-confirmed crossings at a false-positive rate of
+{{S6.llm_per_firm.game_judged.fpr}}, while tirith's path rule also flagged {{S6.tirith_path.game_judged.fpr}} of games
+without one. Private storage removed the file channel, but scripted probes passed bits through host memory
 accounting and the page cache.
 
 ## 1. Introduction
@@ -39,7 +41,9 @@ We test whether pricing agents use a shared scratch directory to pass private in
 own no-network container, uid and private inputs, and chat exists only in designated arms. The treatment assigns one
 shared `/srv/scratch` volume instead of two private copies with the same path and description; the host, harness and
 inference gateway are trusted. Private storage removes this writable path, not every host channel (OpenAI 2026c). We
-predicted, but did not assume, that command inspection would be weaker than storage isolation.
+predicted, but did not assume, that command inspection would be weaker than storage isolation, and test it with
+tirith (Sharma 2026a), the author's pre-existing open-source terminal-security tool for developers and AI agents, used
+both as a live command gate and as an offline monitor (conflict of interest: Appendix A).
 
 Our contributions are:
 
@@ -47,8 +51,8 @@ Our contributions are:
    and trace labels independent of the monitors, a combination not shown in earlier market-game studies we found.
 2. Separate propensity, permitted capability and monitoring-displacement estimates across 14 model configurations
    and ten scenario framings, with positive controls.
-3. Same-game comparisons of storage isolation, live and replayed command rules, LLM judges and an action-dependence
-   audit, reporting minimum detectable effects and event-rate bounds for nulls.
+3. Same-game comparisons of storage isolation, a live tirith command gate and replayed tirith rules, LLM judges and
+   an action-dependence audit, reporting minimum detectable effects and event-rate bounds for nulls.
 
 Later-declared extensions and exploratory analyses are separate from confirmatory tests (Section 4.6).
 
@@ -99,8 +103,8 @@ path and description. Root writes a fresh private canary each round and a privat
 rounds. Firms move in seeded random order, blind to the rival's current action. A turn allows three shell commands, a
 JSON action, rewritten PLANS/INSIGHTS, two after-commands and, in chat arms, one message; commands run as the firm uid
 (10-second timeout, 2,000 visible characters, child processes reaped). One parse retry precedes a flagged
-previous-action fallback. The firms share a kernel, CPU and caches and host-wide `/proc` views, so ISO is
-storage-isolated, not channel-free: SHR − ISO estimates the assigned mount's effect (Appendix F).
+previous-action fallback. ISO is storage-isolated, not channel-free (shared kernel, caches, `/proc`; Appendix F):
+SHR − ISO estimates the assigned mount's effect.
 
 ### 3.4 Arms
 
@@ -153,19 +157,15 @@ check; per-game β uses a lag-differenced baseline and pooled β a wild cluster 
 ### 3.9 Exclusions, sensitivity and changes to the plan
 
 Harness errors are re-run from the same seed, and a game no run completed is missing; >20% unparsed steps exclude a
-game; pilot seeds never enter estimates.
+game; pilot seeds (9000+) never enter estimates (Appendix E summarises the pilot).
 Sensitivities drop fallback rounds or name-only exposure and stratify by host, since relaunches split
 {{sens.host_consistent.P1.l2.n_mixed_hosts}} of {{sens.host_consistent.P1.l2.n_complete_sets}} complete P1 sets and
 {{sens.host_consistent.P2.storage.n_mixed_hosts}} of {{sens.host_consistent.P2.storage.n_complete_sets}} P2 sets
 across hosts (Table C7). An `unknown` label is never a negative and, as pre-registered, blocks the confirmatory claim
 it touches; P1 and P2 are then reported under two imputations (every unknown as no, then as yes; D29) and with
 the range of the estimate over every assignment of the unknowns (D36). `prereg/DEVIATIONS.md`
-timestamps every change, including the duplicate rule (D12) and definitions written after collection began (D7);
-Appendix E separates commit times from the author's account of what had been inspected.
-
-### 3.10 Pilot
-
-Pilot seeds (9000+) never enter estimates; Appendix E summarises the pilot.
+timestamps every change (e.g. D7, D12); Appendix E separates commit times from the author's account of what had been
+inspected.
 
 ## 4. Results
 
@@ -251,7 +251,7 @@ outcome-selected subset, consistent with private-cost information crossing but n
 including zero (Table C5), so no added effect of the offer was detected. Model-variant pairs (S3) and scenario framings (G; Tables
 C4–C6, Figure C1) have three seeds per cell and are reported without interpretation.
 
-### 4.3 Comparison of defence layers
+### 4.3 Defence layers: tirith gate, storage isolation and LLM judges
 
 All live gated games ran on the one host with the pinned tirith binary while many ungated comparators ran elsewhere
 ({{S2.host_consistent.n_mixed_hosts}} of {{S2.host_consistent.n_complete_sets}} gate 2×2 sets span hosts), so the S2
@@ -290,10 +290,8 @@ needs longer horizons remain possible.
 *Exploratory and post hoc (D14).* Matching every subject command against four pattern families
 (`analysis/nonstorage.py`: host-wide `/proc` and `/sys` views, timing primitives, load generation and probes of other
 shared resources) found {{X.nonstorage.any.all.k}} of {{X.nonstorage.n_firm_rounds}} firm-rounds with a match
-({{X.nonstorage.any.ISO.rate}} of ISO and {{X.nonstorage.any.SHR.rate}} of SHR firm-rounds; Table C13):
-{{X.nonstorage.probe.all.k}} probes, {{X.nonstorage.timing.all.k}} timing primitives,
-{{X.nonstorage.host_views.all.k}} host views and {{X.nonstorage.load.all.k}} load generation. A match is an attempt,
-not a working channel.
+({{X.nonstorage.any.ISO.rate}} of ISO and {{X.nonstorage.any.SHR.rate}} of SHR firm-rounds; counts per family in
+Table C13). A match is an attempt, not a working channel.
 
 ### 4.6 Extensions and further exploratory analyses
 
@@ -310,13 +308,12 @@ storage leaves host-level paths, which no agent here is shown to have used (Appe
 
 ## 5. Discussion and Limitations
 
-Told that they may, agents wrote notes addressed to their rival (L2) about as often when the folder was private as
-when it was shared, so permission changed intent more than channel use. Unprompted, rival canaries did cross (L3),
-but shared storage did not detectably raise the dependence of prices on the rival's private cost. Monitoring removed
-most delivered chat coordination, no move into storage was detected, and prices followed the rival's last price less
-under the monitor (E5, exploratory). Path rules fired on routine exploration as well as on crossings, whereas private storage removes the
-shared writable path outright and LLM judges separated crossing games from the rest with few false positives; OpenAI
-(2026d) likewise recommends closing easily discovered cross-sample channels. S2 tests one rule, not all command
+Permission changed intent more than channel use (L2), and unprompted transfers (L3) did not detectably move prices.
+Monitoring removed most delivered chat coordination without a detected move into storage, and prices followed the
+rival's last price less under the monitor (E5, exploratory). The defence layers are complementary: under the tirith
+gate agents used the folder less without detected evasion, but path rules also fire on routine exploration; private
+storage removes the shared writable path outright, as OpenAI (2026d) recommends for easily discovered cross-sample
+channels; and LLM judges separated crossing games with few false positives. S2 tests one rule, not all command
 inspection, and relative-path bypasses of denylists are common (Chen and Lin 2026).
 
 **Limitations.** Shell-using pricing agents in a simulated market are not real shared-vendor deployments. ISO cuts one
@@ -337,25 +334,20 @@ action-channel and AI-control claims (Greenblatt et al. 2023).
 
 ## 6. Conclusion
 
-In a pre-registered design that cuts a shared scratch directory while holding prompts and market draws fixed,
-monitored chat lost most of its coordination and no shift into storage was detected; agents told they may use the
+With prompts and market draws held fixed and only the scratch directory's sharing varied, monitored chat lost most of its coordination and no shift into storage was detected; agents told they may use the
 folder wrote rival-addressed notes as often when it was private; and unprompted, rival canaries crossed in some
 games, but shared storage did not detectably raise prices' dependence on the rival's private cost (minimum
-detectable effect {{P3.mde_observed}}). Gated games showed less
-folder use without detected evasion, but the path rule could not tell exploring from communicating; LLM
+detectable effect {{P3.mde_observed}}). Games gated by tirith showed less
+folder use without detected evasion, but a path rule could not tell exploring from communicating; LLM
 transcript judges separated crossing games well; and private storage removed the file channel while scripted probes
-showed host-level channels it leaves open. The evidence ladder, matched cuts and minimum detectable effects state how
-far each conclusion reaches.
+showed host-level channels it leaves open.
 
 ## Code and Data
 
-- Code, pre-registration, deviations and analysis: https://github.com/sheeki03/shared-host-collusion (Sharma 2026b).
-  The pre-registration is frozen at commit `47a1c35` (tag `prereg-freeze`).
-- tirith 0.5.0 release candidate built from PR #278 head `8856dc60`; binary sha256
-  `aaa5088571c82b3b1b10cde192f6cb07f2aea813d8b16b330041515a7a02c087` (Sharma 2026a).
-- Data in this submission: aggregate tables and redacted transcript excerpts in the report and appendix. Raw Inspect
-  logs contain model text and canaries and remain private; the author will decide after submission whether and how
-  to release them. The public repository contains code and analysis, not raw run logs.
+- Code, pre-registration, deviations and analysis: https://github.com/sheeki03/shared-host-collusion (Sharma 2026b);
+  pre-registration frozen at `47a1c35` (tag `prereg-freeze`).
+- tirith 0.5.0 release candidate (Sharma 2026a), built from PR #278 head `8856dc60`; binary hash in Appendix E.
+- Data: aggregate tables and redacted excerpts are public; raw Inspect logs (model text, canaries) stay private.
 
 ## Author Contributions
 
@@ -370,8 +362,8 @@ Characterizing and Exploiting Page-Cache SCA Leakage Across Containers and VMs. 
 Agrawal, K., Teo, V., Vazquez, J. J., Kunnavakkam, S., Srikanth, V., and Liu, A. (2025). Evaluating LLM Agent
 Collusion in Double Auctions. arXiv:2507.01413.
 
-Alkur, J. (2026). Do impossible tasks make AI agents collude? Lab experiments and a field test on the public
-agent-wiki record. AI Collusion Research Sprint (Apart Research), concurrent work.
+Alkur, J. (2026). It Takes Two Stuck Agents: Impossible Tasks Make AI Agents Answer Each Other Only When the Helpers Are
+Stuck Too. AI Collusion Research Sprint (Apart Research), concurrent work.
 https://github.com/Alkur123/apart-collusion-impossible-tasks
 
 Bonjour, T., Aggarwal, V., and Bhargava, B. (2022). Information Theoretic Approach to Detect Collusion in Multi-Agent
@@ -400,8 +392,7 @@ Gal-Or, E. (1986). Information Transmission: Cournot and Bertrand Equilibria. Re
 85-92. doi:10.2307/2297593
 
 Gardner-Challis, N., Bostock, J., Kozhevnikov, G., Sinclaire, M., Velja, J., Abate, A., and Griffin, C. (2026). When
-can we trust untrusted monitoring? A safety case sketch across collusion strategies. arXiv:2602.20628 (poster, NeurIPS
-2026 Workshop on Agents in the Wild).
+can we trust untrusted monitoring? A safety case sketch across collusion strategies. arXiv:2602.20628 (a version was presented as a poster at the NeurIPS 2026 Workshop on Agents in the Wild).
 
 Greenblatt, R., Shlegeris, B., Sachan, K., and Roger, F. (2023). AI Control: Improving Safety Despite Intentional
 Subversion. arXiv:2312.06942.
@@ -474,8 +465,9 @@ Emergent Cheating and Whistleblowing in Autonomous Research Swarms. arXiv:2609.0
 Pandey, D., Duttagupta, S., Zou, X., and Bhati, A. S. (2026). Don't Judge an Agent by Its Messages: Private-State
 Leakage under Passive Monitoring of Agent Communication. arXiv:2610.25032.
 
-Peist, M., Romero, J., and Sauer, L. (2025). Algorithmic pricing with LLMs: prompt code (MIT licence), as adapted in
-the Poseidon Research collusion hackathon starter.
+Peist, M., Romero, J., and Sauer, L. (2025). Algorithmic Collusion and the Limits of Coordination. Master's project,
+Barcelona School of Economics; code (MIT licence) at https://github.com/luciasauer/algorithmic_pricing_llms, as adapted
+in the Poseidon Research collusion hackathon starter.
 https://github.com/poseidon-research/collusion_hackathon/tree/main/algorithmic-pricing-llms
 
 Radev, N., Haas, L., Arnav, B., and Bernabeu-Pérez, P. (2026). The Best-Laid SCHEMEs: Coordinated Sabotage and
@@ -510,7 +502,7 @@ Tailor, O. (2025). Audit the Whisper: Detecting Steganographic Collusion in Mult
 Tran, H., and Yu, H. (2026). Is Anyone Enforcing the Cartel? What Reinforcement Learning Teaches LLM Agents in
 Markets. arXiv:2610.28787.
 
-UK AI Security Institute (2024). Inspect: A Framework for Large Language Model Evaluations. Software.
+UK AI Security Institute (2024). Inspect AI: Framework for Large Language Model Evaluations. Software.
 https://github.com/UKGovernmentBEIS/inspect_ai
 
 US Department of Justice, Antitrust Division (1994). United States v. Airline Tariff Publishing Company et al., Civil

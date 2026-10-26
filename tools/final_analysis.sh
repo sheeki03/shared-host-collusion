@@ -7,7 +7,8 @@
 #   code      final L2 coder pass over the confirmatory set and E1 (ext-rep) pass, both strict      [paid]
 #   handcheck draw the pre-registered hand-check sheet (a person labels runs/analysis/handcheck/handcheck_sheet.csv)
 #   agree     agreement of the filled hand-check sheet
-#   review_inputs validate the separately disclosed AI review and cost receipts (D38); never human validation
+#   review_inputs validate the separately disclosed AI review and cost receipts (D38); never human validation.
+#             With runs/analysis/handcheck/agreement.json present it takes the D40 human route: no review.ai.* keys
 #   outputs   analysis.report_outputs (confirmatory), then the excerpts by the pre-declared rules
 #   extras    extensions (E1-E5), signalling (E5), A1-A3, the A4 matrix, run concurrently (none reads another's
 #             output, nor report_outputs'), so `extras` may run alongside `judges outputs`
@@ -80,7 +81,9 @@ stage_agree() {
 }
 
 stage_review_inputs() {
-  $PY tools/final_review_inputs.py
+  local h=()
+  [ ! -f runs/analysis/handcheck/agreement.json ] || h=(--human-validation-completed)   # D40: AI review not read
+  $PY tools/final_review_inputs.py ${h[@]+"${h[@]}"}
 }
 
 stage_outputs() {
@@ -129,7 +132,7 @@ stage_fill() {
   $PY tools/pick_excerpts.py --fill report/APPENDIX.md
 }
 
-[ $# -gt 0 ] || { sed -n 2,15p "$0"; exit 2; }
+[ $# -gt 0 ] || { sed -n 2,16p "$0"; exit 2; }
 for s in "$@"; do
   declare -F "stage_$s" >/dev/null || { echo "unknown stage: $s" >&2; exit 2; }
   collect; echo "== $s $(date +%T)"; "stage_$s"

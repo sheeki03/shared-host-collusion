@@ -1,4 +1,5 @@
-"""D38 keeps AI review separate from human validation and reconciles cost components within their own scopes."""
+"""D38 keeps AI review separate from human validation and reconciles cost components within their own scopes; the
+D40 human route (--human-validation-completed) writes no review.ai.* key and keeps the account deferral."""
 from __future__ import annotations
 
 import csv
@@ -158,5 +159,64 @@ def test_cli_writes_separate_result_and_cannot_overwrite_private_inputs(inputs, 
     assert json.loads(out.read_text())["review.ai.n"] == 100
     for p in inputs:
         assert p.read_bytes() == before[p]
+        with pytest.raises(ValueError, match="must not overwrite"):
+            fri.main([*args, "--out", str(p)])
+
+
+@pytest.fixture
+def human(inputs, tmp_path):
+    sheet = inputs[0]
+    human_sheet = tmp_path / "handcheck_sheet.csv"
+    human_sheet.write_text(sheet.read_text().replace("PRIVATE-REVIEW-NOTE", "HUMAN-NOTE"))
+    agreement = put_json(tmp_path / "agreement.json", {"n": 100, "raw_agreement": 0.9, "kappa": 0.8})
+    return agreement, human_sheet
+
+
+def test_human_route_reports_no_ai_review_and_keeps_account_deferred(inputs, human):
+    agreement, human_sheet = human
+    inputs[2].unlink()   # the AI reviewer metadata is not needed on the human route
+    result = fri.build(*inputs, human_validation_completed=True, agreement=agreement, human_sheet=human_sheet)
+    assert result["review.human.status"] == fri.HUMAN_STATUS
+    assert result["review.account.status"] == "deferred (D38)"
+    assert not any(k.startswith("review.ai.") for k in result)
+    assert set(k for k in result if k.startswith("review.")) == {"review.human.status", "review.account.status"}
+    assert result["costs.key_usage.scope"] == "current API key only" and result["costs.recorded.total_usd"] == 20
+    assert not any(k.startswith(("coding.", "meta.")) for k in result)
+    assert "PRIVATE-" not in json.dumps(result) and "HUMAN-NOTE" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("change", ["no_agreement", "no_sheet", "n", "n_bool", "nan_kappa", "raw_range", "ai_copy"])
+def test_human_route_fails_closed(inputs, human, change):
+    agreement, human_sheet = human
+    if change == "no_agreement":
+        agreement.unlink()
+    elif change == "no_sheet":
+        human_sheet.unlink()
+    elif change == "n":
+        put_json(agreement, {"n": 99, "raw_agreement": 0.9, "kappa": 0.8})
+    elif change == "n_bool":
+        put_json(agreement, {"n": True, "raw_agreement": 0.9, "kappa": 0.8})
+    elif change == "nan_kappa":
+        agreement.write_text('{"n": 100, "raw_agreement": 0.9, "kappa": NaN}')
+    elif change == "raw_range":
+        put_json(agreement, {"n": 100, "raw_agreement": 1.5, "kappa": 0.8})
+    else:
+        human_sheet.write_bytes(inputs[0].read_bytes())
+    with pytest.raises(ValueError):
+        fri.build(*inputs, human_validation_completed=True, agreement=agreement, human_sheet=human_sheet)
+
+
+def test_cli_human_route_writes_no_ai_keys(inputs, human, tmp_path):
+    sheet, key, reviewer, recorded, usage = inputs
+    agreement, human_sheet = human
+    args = ["--sheet", str(sheet), "--key", str(key), "--reviewer", str(reviewer),
+            "--recorded-costs", str(recorded), "--provider-usage", str(usage), "--human-validation-completed",
+            "--agreement", str(agreement), "--human-sheet", str(human_sheet)]
+    out = tmp_path / "out" / "results.json"
+    assert fri.main([*args, "--out", str(out)]) == 0
+    written = json.loads(out.read_text())
+    assert written["review.human.status"] == fri.HUMAN_STATUS
+    assert not any(k.startswith("review.ai.") for k in written)
+    for p in (agreement, human_sheet):
         with pytest.raises(ValueError, match="must not overwrite"):
             fri.main([*args, "--out", str(p)])

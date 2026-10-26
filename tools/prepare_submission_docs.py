@@ -161,7 +161,7 @@ def format_docx(path: Path, *, supplement: bool = False, combined: bool = False)
         sty.font.size = Pt(size)
         sty.font.bold = True
         sty.font.color.rgb = RGBColor(0, 0, 0)
-        sty.paragraph_format.space_before = Pt(10 if name != "Title" else 0)
+        sty.paragraph_format.space_before = Pt(8 if name != "Title" else 0)
         sty.paragraph_format.space_after = Pt(3)
         sty.paragraph_format.line_spacing = 1.0
         sty.paragraph_format.keep_with_next = True
@@ -268,6 +268,165 @@ def format_docx(path: Path, *, supplement: bool = False, combined: bool = False)
     doc.save(path)
 
 
+def apply_template_title_block(path: Path, reference: Path) -> None:
+    """Replace Pandoc's plain front matter with the official template's own title block, filled in.
+
+    The template's first-page block (ruled title with the sprint footnote, centred author grid, "With Apart Research",
+    centred Abstract heading and indented abstract) is copied from the reference DOCX. The author takes the centre
+    cell, the unused author cells and second author row are removed, and the abstract text replaces the italic
+    guidance. The template's information box and guidance text are not copied. The text is unchanged.
+    """
+    import copy
+    from lxml import etree
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    PR = "http://schemas.openxmlformats.org/package/2006/relationships"
+    W14 = "http://schemas.microsoft.com/office/word/2010/wordml"
+    q = lambda tag: f"{{{W}}}{tag}"
+    text = lambda el: "".join(t.text or "" for t in el.iter(q("t")))
+    with ZipFile(reference) as z:
+        tbody = etree.fromstring(z.read("word/document.xml")).find(q("body"))
+        tnotes = etree.fromstring(z.read("word/footnotes.xml"))
+        trels = etree.fromstring(z.read("word/_rels/footnotes.xml.rels"))
+    with ZipFile(path) as z:
+        entries = [(info, z.read(info.filename)) for info in z.infolist()]
+    parts = {info.filename: data for info, data in entries}
+    doc = etree.fromstring(parts["word/document.xml"])
+    body = doc.find(q("body"))
+    # Pandoc front matter: title, author line, "With Apart Research", sprint line, Abstract heading, abstract.
+    front = []
+    for el in body:
+        if el.tag == q("p") and re.match(r"1\.\s*Introduction$", text(el).strip()):
+            break
+        front.append(el)
+    else:
+        raise ValueError("No '1. Introduction' heading after the front matter")
+    paras = [p for p in front if p.tag == q("p") and text(p).strip()]
+    title = text(paras[0]).strip()
+    author = paras[1]
+    name = "".join(text(r) for r in author.iter(q("r")) if r.find(f"{q('rPr')}/{q('b')}") is not None).strip()
+    affiliation = text(author).replace(name, "", 1).strip()
+    heading = next(i for i, p in enumerate(paras) if text(p).strip() == "Abstract")
+    abstract = [text(p).strip() for p in paras[heading + 1:]]
+    if not (title and name and affiliation and abstract) or [text(p).strip() for p in paras[2:3]] != ["With Apart Research"]:
+        raise ValueError("Unexpected front matter; expected title, author, With Apart Research and Abstract")
+    block = []
+    for el in tbody:
+        if el.tag == q("tbl") and text(el).startswith("How to use this template"):
+            break
+        # The empty spacer paragraphs around the block are omitted to save page length; the block itself is kept.
+        if el.tag == q("tbl"):
+            block.append(copy.deepcopy(el))
+    else:
+        raise ValueError("Template information box not found")
+
+    def cell_texts(cell, values):
+        # The template writes "Author name N", a line break and "Affiliation" as separate text nodes of one run.
+        ts = [t for t in cell.iter(q("t")) if (t.text or "").strip()]
+        if len(ts) != len(values):
+            raise ValueError("Unexpected template author cell")
+        for t, value in zip(ts, values):
+            t.text = value
+
+    def para_with(prefix):
+        return next(p for el in block for p in el.iter(q("p")) if text(p).strip().startswith(prefix))
+
+    title_para = para_with("PROJECT TITLE")
+    next(t for t in title_para.iter(q("t")) if t.text and "PROJECT TITLE" in t.text).text = title
+    # A long title at the template's 20 pt leaves one word on a third line; 18 pt keeps it to two lines.
+    for size in title_para.iter(q("sz"), q("szCs")):
+        if len(title) > 80:
+            size.set(q("val"), "36")
+    cells = {n: next(a for a in para_with(f"Author name {n}").iterancestors(q("tc"))) for n in range(1, 7)}
+    row2 = next(cells[4].iterancestors(q("tr")))
+    if any(c in row2.iter(q("tc")) for c in (cells[1], cells[2], cells[3])):
+        raise ValueError("Template author rows are not separable")
+    row2.getparent().remove(row2)
+    cell_texts(cells[2], [name, affiliation])
+    # One author: the centre cell becomes the author grid's only column, at the grid's full width, so a narrow
+    # template column cannot wrap the name.
+    grid = next(cells[2].iterancestors(q("tbl")))
+    width = next(grid.iterancestors(q("tbl"))).find(f"{q('tblPr')}/{q('tblW')}").get(q("w"))
+    for n in (1, 3):
+        cells[n].getparent().remove(cells[n])
+    for cols in grid.iter(q("tblGrid")):
+        for col in cols.findall(q("gridCol")):
+            cols.remove(col)
+        etree.SubElement(cols, q("gridCol")).set(q("w"), width.split(".")[0])
+    grid.find(f"{q('tblPr')}/{q('tblW')}").set(q("w"), width)
+    tcpr = cells[2].find(q("tcPr"))
+    for el in tcpr.findall(q("tcW")) + tcpr.findall(q("gridSpan")):
+        tcpr.remove(el)
+    tcw = etree.Element(q("tcW"))
+    tcw.set(q("w"), width.split(".")[0])
+    tcw.set(q("type"), "dxa")
+    tcpr.insert(0, tcw)
+    guide = para_with("Summarize your project")
+    runs = guide.findall(q("r"))
+    rpr = copy.deepcopy(runs[0].find(q("rPr")))
+    for tag in ("i", "iCs", "u"):
+        for el in rpr.findall(q(tag)):
+            rpr.remove(el)
+    previous = guide
+    for k, para_text in enumerate(abstract):
+        p = guide if k == 0 else copy.deepcopy(guide)
+        for r in p.findall(q("r")) + p.findall(q("hyperlink")):
+            p.remove(r)
+        r = etree.SubElement(p, q("r"))
+        r.append(copy.deepcopy(rpr))
+        t = etree.SubElement(r, q("t"))
+        t.text = para_text
+        t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+        if k:
+            previous.addnext(p)
+            previous = p
+    for el in block:
+        for b in list(el.iter(q("bookmarkStart"), q("bookmarkEnd"))):
+            b.getparent().remove(b)
+        for node in el.iter():
+            for attr in (f"{{{W14}}}paraId", f"{{{W14}}}textId"):
+                node.attrib.pop(attr, None)
+    # The sprint footnote keeps the template's text and link under ids that do not collide with Pandoc's.
+    notes = etree.fromstring(parts["word/footnotes.xml"])
+    rels = etree.fromstring(parts.get("word/_rels/footnotes.xml.rels")
+                            or f'<Relationships xmlns="{PR}"/>'.encode())
+    new_id = str(max(int(n.get(q("id"))) for n in notes) + 1)
+    ref = next(title_para.iter(q("footnoteReference")))
+    old_note = next(n for n in tnotes if n.get(q("id")) == ref.get(q("id")))
+    ref.set(q("id"), new_id)
+    note = copy.deepcopy(old_note)
+    note.set(q("id"), new_id)
+    for shd in list(note.iter(q("shd"))):
+        shd.getparent().remove(shd)
+    for node in note.iter():
+        node.attrib.pop(f"{{{W14}}}paraId", None)
+    used = {r.get("Id") for r in rels}
+    for link in note.iter(q("hyperlink")):
+        source = next(r for r in trels if r.get("Id") == link.get(f"{{{R}}}id"))
+        rid = next(f"rIdTpl{i}" for i in range(1, 100) if f"rIdTpl{i}" not in used)
+        used.add(rid)
+        clone = copy.deepcopy(source)
+        clone.set("Id", rid)
+        rels.append(clone)
+        link.set(f"{{{R}}}id", rid)
+    notes.append(note)
+    for el in front:
+        body.remove(el)
+    for k, el in enumerate(block):
+        body.insert(k, el)
+    replacements = {"word/document.xml": etree.tostring(doc, xml_declaration=True, encoding="UTF-8", standalone=True),
+                    "word/footnotes.xml": etree.tostring(notes, xml_declaration=True, encoding="UTF-8", standalone=True),
+                    "word/_rels/footnotes.xml.rels": etree.tostring(rels, xml_declaration=True, encoding="UTF-8",
+                                                                     standalone=True)}
+    temp = path.with_suffix(".title.tmp")
+    with ZipFile(temp, "w", ZIP_DEFLATED) as z:
+        for info, data in entries:
+            z.writestr(info, replacements.pop(info.filename, data))
+        for name_, data in replacements.items():
+            z.writestr(name_, data)
+    temp.replace(path)
+
+
 def validate_final_inputs(results: dict, text: str) -> None:
     """Fail closed on missing author inputs; accept D38 only as the explicitly disclosed deviation it is.
 
@@ -366,6 +525,8 @@ def main() -> None:
                         "--reference-doc", str(a.template.resolve()), "-o", str(out)], check=True)
         preserve_template_package(out, a.template, a.pandoc)
         format_docx(out, supplement=stem == "SUPPLEMENT", combined=stem == "REPORT")
+        if stem != "SUPPLEMENT":
+            apply_template_title_block(out, a.template)
         files.append(out.name)
     (a.out_dir / "TABLES_README.md").write_text(
         "# Complete generated tables\n\nThese tables accompany the manuscript and supplement. Each cited generated "
