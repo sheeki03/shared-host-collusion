@@ -665,14 +665,14 @@ def test_every_written_key_is_documented(world):
     assert json.loads((world.tmp / "out" / "ext_results.json").read_text())["ext.meta.n_games"] == 216
 
 
-SECTION = ROOT / "report" / "EXTENSIONS_SECTION.md"
+SECTION = ROOT / "report" / "REPORT.md"  # Section 4.6 and Appendix G (the former report/EXTENSIONS_SECTION.md)
 
 
 def placeholders(prefix: str) -> set[str]:
     return {k for k in re.findall(r"\{\{([^}]+)\}\}", SECTION.read_text(encoding="utf-8")) if k.startswith(prefix)}
 
 
-@pytest.mark.skipif(not SECTION.exists(), reason="report/EXTENSIONS_SECTION.md not present")
+@pytest.mark.skipif(not SECTION.exists(), reason="report/REPORT.md not present")
 def test_report_placeholders_resolve(world):
     want = placeholders("ext.")
     assert want and not sorted(want - set(world.full)), sorted(want - set(world.full))[:10]

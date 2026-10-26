@@ -186,7 +186,7 @@ def test_every_written_key_is_documented(world):
     assert (world.tmp / "out" / "tables" / "signal_contrasts.md").read_text().startswith("_Price-following")
 
 
-@pytest.mark.skipif(not SECTION.exists(), reason="report/EXTENSIONS_SECTION.md not present")
+@pytest.mark.skipif(not SECTION.exists(), reason="report/REPORT.md not present")
 def test_report_placeholders_resolve(world):
     want = placeholders("signal.")
     assert want and not sorted(want - set(world.res)), sorted(want - set(world.res))
