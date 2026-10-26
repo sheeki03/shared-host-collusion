@@ -6,8 +6,9 @@ Usage (repo root, venv python):
       --extra runs/analysis/ext/ext_results.json --extra runs/analysis/signal/signal_results.json \
       --extra runs/analysis/x/leak/x_leak.json ... --out runs/analysis/final
 The base is analysis/report_outputs.py's results.json: its meta.* keys (cohort, preliminary flag, counts) are the only
-meta keys in the merged file. Each --extra is a flat {key: value} file from analysis/extensions.py, signalling.py,
-leakage_probe.py, pathway.py, price_digits.py or tools/isocal_matrix.py; meta.* keys in an extra are dropped. A key
+meta keys (and its "notes" the only "notes") in the merged file. Each --extra is a flat {key: value} file from analysis/extensions.py, signalling.py,
+leakage_probe.py, pathway.py, price_digits.py or tools/isocal_matrix.py; meta.* keys in an extra are dropped and
+its "notes" are kept as notes.<file stem>. A key
 present in two inputs must have the same value in both, or the merge fails (nothing is overwritten silently).
 Tables: every *.md under <input dir>/tables/ is copied to <out>/tables/; the same table name from two inputs must
 have identical content. The base's figures/ and excerpts.json are copied next to the merged file. <out>/merge.json
@@ -41,7 +42,9 @@ def merge(base: Path, extras: list[Path], out: Path) -> dict:
         d = json.loads(x.read_text(encoding="utf-8"))
         if not isinstance(d, dict):
             raise MergeError(f"{x}: not a flat results object")
-        kept = {k: v for k, v in d.items() if not k.startswith("meta.")}
+        kept = {k: v for k, v in d.items() if not k.startswith("meta.") and k != "notes"}
+        if "notes" in d:  # each module's run notes, kept apart: notes.<file stem>
+            kept[f"notes.{x.stem}"] = d["notes"]
         for k, v in kept.items():
             if k in res and res[k] != v:
                 raise MergeError(f"key {k!r} differs between {origin[k]} and {x}")

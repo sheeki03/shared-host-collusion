@@ -18,12 +18,14 @@ def put(d, name, res, tables=None):
 
 
 def test_merge_keeps_base_meta_and_copies_tables(tmp_path):
-    base = put(tmp_path / "a", "results.json", {"meta.cohort": "confirmatory", "P1.diff": 0.1}, {"costs.md": "c"})
-    x = put(tmp_path / "x", "x_leak.json", {"meta.cohort": "pilot", "x.leak.pooled.verdict": "no evidence"},
-            {"x_leak.md": "t"})
+    base = put(tmp_path / "a", "results.json", {"meta.cohort": "confirmatory", "P1.diff": 0.1, "notes": ["b"]},
+               {"costs.md": "c"})
+    x = put(tmp_path / "x", "x_leak.json", {"meta.cohort": "pilot", "x.leak.pooled.verdict": "no evidence",
+                                             "notes": ["x"]}, {"x_leak.md": "t"})
     m = mr.merge(base, [x], tmp_path / "out")
     res = json.loads((tmp_path / "out" / "results.json").read_text())
-    assert res == {"meta.cohort": "confirmatory", "P1.diff": 0.1, "x.leak.pooled.verdict": "no evidence"}
+    assert res == {"meta.cohort": "confirmatory", "P1.diff": 0.1, "x.leak.pooled.verdict": "no evidence",
+                   "notes": ["b"], "notes.x_leak": ["x"]}
     assert sorted(p.name for p in (tmp_path / "out" / "tables").iterdir()) == ["costs.md", "x_leak.md"]
     assert m["inputs"][1]["dropped_meta"] == 1
 
