@@ -274,10 +274,12 @@ TABLES = ("rounds", "games", "calls", "chat", "gate", "scratch_events", "outputs
 
 def read_log(reader: Callable, info: Any) -> Any:
     """`reader(info)`; when the reader is Inspect's own read_eval_log, without the per-sample event and message
-    streams (HEAVY_FIELDS), which no analysis reads and which are most of a log's size."""
+    streams (HEAVY_FIELDS), which no analysis reads and which are most of a log's size. Saved crossing labels are
+    recomputed with the current trace detector (analysis/relabel.py, DEVIATIONS D36)."""
+    from analysis import relabel
     if str(getattr(reader, "__module__", "")).startswith("inspect_ai"):
-        return reader(info, exclude_fields=set(HEAVY_FIELDS))
-    return reader(info)
+        return relabel.relabel_log(reader(info, exclude_fields=set(HEAVY_FIELDS)))
+    return relabel.relabel_log(reader(info))
 
 
 def load_tables(log_dirs: Sequence[str], *, cohort: str = "confirmatory", strict: bool = True,

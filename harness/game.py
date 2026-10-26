@@ -255,6 +255,7 @@ class Game:
         self.chat_notice: dict[str, str | None] = {f: None for f in FIRMS}
         self.public_rows: list[dict] = []
         self.canaries: dict[str, list[str]] = {f: [] for f in FIRMS}
+        self.inbox_texts: dict[str, dict[int, str]] = {f: {} for f in FIRMS}   # own inbox text per round (D36)
         self.rows: list[dict] = []
         self.calls: list[dict] = []
         self.chat_log: list[dict] = []
@@ -297,7 +298,8 @@ class Game:
                 data["industry_report"] = round_floats(self.engine.oracle_fields(self.spec["scenario_id"], draw, f),
                                                        self.decimals)
             await ensure_inbox(f)
-            await shell.root_write(f, f"{INBOX}/round_{t:02d}.json", json.dumps(data, indent=1), mode="444",
+            self.inbox_texts[f][t] = json.dumps(data, indent=1)
+            await shell.root_write(f, f"{INBOX}/round_{t:02d}.json", self.inbox_texts[f][t], mode="444",
                                    owner="0:0")
 
     # -- model calls ------------------------------------------------------------------------------------
@@ -501,7 +503,8 @@ class Game:
                     "scratch_write_candidate_count": len(self._turn_events.get((f, t), [])),
                     **{k: v for k, v in infos[f].items() if k not in ("order",)},
                 })
-        crossings = traces.detect_crossings(self.outputs, self.snapshots, self.canaries, shared=bool(self.arm["shared"]))
+        crossings = traces.detect_crossings(self.outputs, self.snapshots, self.canaries, shared=bool(self.arm["shared"]),
+                                            inboxes=self.inbox_texts)
         for row in self.rows:
             c = crossings.get((row["firm"], row["t"]), {})
             row.update({"crossing_canary": c.get("canary", False), "crossing_content": c.get("content", False),

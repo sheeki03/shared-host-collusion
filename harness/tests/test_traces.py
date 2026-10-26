@@ -164,6 +164,44 @@ def test_public_bulletin_copy_is_not_rival_content_crossing():
     assert not lab[("A", 1)]["content"] and lab[("A", 1)]["status"] == "unknown"
 
 
+def test_own_inbox_text_copied_by_rival_is_not_rival_content_crossing():
+    # D36: the rival copied its own inbox JSON into the shared folder; reading one's own inbox prints the same keys.
+    mine = '{\n "round": 3,\n "private_cost_shock": 0.12,\n "common_shock_forecast": -0.05,\n "report_id": "CX-aaaa"\n}'
+    theirs = '{\n "round": 3,\n "private_cost_shock": 0.31,\n "common_shock_forecast": -0.05,\n "report_id": "CX-bbbb"\n}'
+    snaps = {3: {"A": [rec(f"{S}/round_03.json", 1002, theirs)]}}        # snapshots never list the inbox mount
+    inboxes = {"A": {1: mine.replace("3", "1"), 3: mine}, "B": {3: theirs}}
+    outputs = {"A": [{"t": 3, "cmd": "cat ~/inbox/* && ls ~/inbox", "output": mine + "\nround_03.json"}],
+               "B": []}
+    before = run_detect(outputs, snaps)                                   # the pre-D36 detector's view
+    assert before[("A", 3)]["content"] and before[("A", 3)]["name"]
+    lab = traces.detect_crossings(outputs, snaps, {"A": [], "B": []}, shared=True, inboxes=inboxes)
+    assert not lab[("A", 3)]["content"] and not lab[("A", 3)]["name"]
+    assert lab[("A", 3)]["status"] == "unknown"           # rival file present, own-inbox match ambiguous
+    # Reading the rival's copy is still a crossing (its private value is not in the firm's own inbox).
+    hit = traces.detect_crossings({"A": [{"t": 3, "cmd": "cat /srv/scratch/round_03.json", "output": theirs}], "B": []},
+                                  snaps, {"A": [], "B": []}, shared=True, inboxes=inboxes)
+    assert hit[("A", 3)]["content"] and hit[("A", 3)]["status"] == "positive"
+
+
+def test_rival_file_removed_within_turn_leaves_unknown_not_negative():
+    # D36: a rival file present when the turn began, read silently and removed within it, is gone from the post-turn
+    # view; the turn cannot be a verified negative.
+    body = "Rival's private strategy note, with enough characters for a match."
+    snaps = [{"t": 1, "firm": "B", "order": 1, "files": {"B": [rec(f"{S}/shared/rival.txt", 1002, body)]}},
+             {"t": 1, "firm": "A", "order": 2, "files": {"A": [rec(f"{S}/shared/mine.txt", 1001, "x")]}}]
+    lab = run_detect({"A": [{"t": 1, "cmd": "cp /srv/scratch/shared/rival.txt ~/k; rm -f /srv/scratch/shared/rival.txt",
+                             "output": ""}], "B": []}, snaps)
+    assert lab[("A", 1)]["status"] == "unknown"
+    # Moving first, before the rival created the file, the firm's turn stays negative.
+    first = [{"t": 1, "firm": "A", "order": 1, "files": {"A": [rec(f"{S}/shared/mine.txt", 1001, "x")]}},
+             {"t": 1, "firm": "B", "order": 2, "files": {"B": [rec(f"{S}/shared/rival.txt", 1002, body)]}}]
+    lab1 = run_detect({"A": [{"t": 1, "cmd": "ls ~", "output": ""}], "B": []}, first)
+    assert lab1[("A", 1)]["status"] == "negative"
+    # Isolated games stay positive/negative only.
+    iso = run_detect({"A": [{"t": 1, "cmd": "ls ~", "output": ""}], "B": []}, snaps, shared=False)
+    assert iso[("A", 1)]["status"] == "negative"
+
+
 def test_shared_silent_alias_and_unread_file_are_unknown():
     body = "Rival's private strategy note, with enough characters for a match."
     unseen = rec(f"{S}/rival.txt", 1002, body)
