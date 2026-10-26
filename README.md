@@ -145,7 +145,12 @@ class) or hostnames: each recorded machine becomes an alias (m1, m2, ...). Wheth
 copies a VPS's `runs/full/logs-<host>/` and its ledger to `runs/remote/<host>/` (read-only on the remote side).
 
 **6. Analysis and report** ($0 except the two classifiers, which are paid and each need their own ledger and cap).
-Run from the repo root once every runner has finished. The full confirmatory sequence:
+Run from the repo root once every runner has finished. The sequence actually run is `tools/final_analysis.sh` (stages
+`sync audit judges code handcheck agree outputs extras fill`); where it differs from the block below, the script is
+the record: the Kimi ledgers of D24-D25 are retired, the coder cap is $150 (D26), the judges run a census at a $60
+budget on an $80 ledger (D27), the E1 classifier runs on its own ledger (`--cohort ext-rep`), and the extensions,
+signalling, A1-A3, the A4 matrix (`tools/isocal_matrix.py`) and `tools/merge_results.py` feed one merged results file
+that `tools/fill_report.py` reads. The full confirmatory sequence as first written:
 
 ```bash
 # 1. Pull every remote host's logs and ledgers to runs/remote/<host>/ (read-only on the remote side).
