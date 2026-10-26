@@ -640,7 +640,9 @@ def try_(ctx: Ctx, label: str, fn: Callable[[], Any]) -> Any:
 
 
 def mean_ci(values: Iterable[float], rng: np.random.Generator, n_boot: int = 2000) -> tuple[float, float, float, int]:
-    v = np.asarray([x for x in values if x is not None and np.isfinite(x)], float)
+    """Mean and game-bootstrap 95% CI of the known values: None, NaN and pandas NA (an unknown trace outcome in a
+    nullable column, D19/D23) are left out, never counted as zero."""
+    v = np.asarray([x for x in values if x is not None and not pd.isna(x) and np.isfinite(float(x))], float)
     if v.size == 0:
         return (np.nan, np.nan, np.nan, 0)
     if v.size == 1:

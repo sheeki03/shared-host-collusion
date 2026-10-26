@@ -1377,3 +1377,10 @@ def test_positive_controls_keys_are_contract_keys_and_slugs_are_the_extensions_s
     ro.positive_controls(pre, clash, rows)
     assert "pc.chat_iso.dp.glm-5_3.diff" not in pre.res and isinstance(pre.res["pc.chat_iso.dp.diff"], float)
     assert any("reserved or shared" in n for n in pre.notes)
+
+
+def test_mean_ci_leaves_out_unknown_values_in_nullable_columns():
+    vals = pd.Series([0.5, pd.NA, 1.0, None], dtype="Float64")
+    m, lo, hi, n = ro.mean_ci(vals, np.random.default_rng(0), n_boot=200)
+    assert n == 2 and m == pytest.approx(0.75) and lo <= m <= hi
+    assert ro.mean_ci(pd.Series([pd.NA], dtype="Float64"), np.random.default_rng(0))[3] == 0
