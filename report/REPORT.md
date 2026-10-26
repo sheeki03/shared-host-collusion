@@ -1221,8 +1221,9 @@ declared: the host's shared-memory count in `/proc/meminfo` after the sender wri
 1-minute load average after a busy loop; read timing of a shared image file that the sender may have pulled into the
 page cache; and storage write timing, the negative control. Table A1 gives every run. Memory accounting was a channel
 in {{x.isocal.channel_runs.memory}} of {{x.isocal.n_runs}} runs, page-cache timing in
-{{x.isocal.channel_runs.pagecache}}, the load average in {{x.isocal.channel_runs.load}}, and the storage-timing control
-in {{x.isocal.channel_runs.storage}}.
+{{x.isocal.channel_runs.pagecache}} (in {{x.isocal.unavailable_runs.pagecache}} more its declared setup probe found too
+few files that eviction slowed, so that run gives neither a channel nor a null), the load average in
+{{x.isocal.channel_runs.load}}, and the storage-timing control in {{x.isocal.channel_runs.storage}}.
 <!-- if x.isocal.channel_runs.storage is above zero: "The negative control was not negative everywhere: storage write
 timing carried a weak channel on [the host types, from Table A1], so it is a channel there, not a control." Name the
 host type from Table A1. -->

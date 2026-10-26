@@ -10,7 +10,9 @@ Keys, per run label <r> (the --run label: letters, digits and underscores) and c
 storage; primary statistic only, as the decision rule):
   x.isocal.<r>.{condition,platform,os,kernel,cpus,containers_start,load_start,load_end,complete,protocol_as_declared}
   x.isocal.<r>.<c>.{status,statistic,correct,n_test,accuracy,ci_lo,ci_hi,capacity,capacity_lower,channel}
-  x.isocal.n_runs, x.isocal.channel_runs.<c> (runs in which <c> is a channel), x.isocal.label
+  x.isocal.<r>.<c>.stage (the failed stage when status is not ok, e.g. setup:probe)
+  x.isocal.n_runs, x.isocal.channel_runs.<c> (runs in which <c> is a channel), x.isocal.unavailable_runs.<c>
+  (runs in which its setup failed, so neither channel nor null), x.isocal.label
 The condition is the caller's label recorded by the tool; load_start and load_end (1-minute load average) say what the
 host actually carried, so the text can say when a run labelled "loaded" lost its load. Nothing here is a model result:
 a channel row shows capacity the ISO sandbox leaves in place, not that any agent used it.
@@ -48,6 +50,7 @@ def run_keys(label: str, doc: dict) -> dict:
         q = f"{p}.{c}"
         if not ch or ch.get("status") != "ok" or not ch.get("analysis"):
             out[f"{q}.status"] = (ch or {}).get("status") or "not run"
+            out[f"{q}.stage"] = ((ch or {}).get("error") or {}).get("stage") or "-"
             out[f"{q}.channel"] = "not available"
             continue
         a = ch["analysis"]
@@ -74,7 +77,7 @@ def table(labels: list[str], res: dict) -> str:
         for r in labels:
             q = f"x.isocal.{r}.{c}"
             if res[f"{q}.status"] != "ok":
-                cells.append(f"not available ({res[f'{q}.status']})")
+                cells.append(f"not available (failed at {res[f'{q}.stage']})")
                 continue
             cells.append(f"{res[f'{q}.correct']}/{res[f'{q}.n_test']} ({res[f'{q}.ci_lo']:.2f}–{res[f'{q}.ci_hi']:.2f}); "
                          f"{res[f'{q}.capacity']:.2f} bit/round (≥ {res[f'{q}.capacity_lower']:.2f}); "
@@ -102,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
     res["x.isocal.n_runs"] = len(labels)
     for c in CHANNELS:
         res[f"x.isocal.channel_runs.{c}"] = sum(res[f"x.isocal.{r}.{c}.channel"] == "yes" for r in labels)
+        res[f"x.isocal.unavailable_runs.{c}"] = sum(res[f"x.isocal.{r}.{c}.channel"] == "not available" for r in labels)
     out = Path(a.out)
     (out / "tables").mkdir(parents=True, exist_ok=True)
     (out / "isocal_results.json").write_text(json.dumps(res, indent=1, sort_keys=True), encoding="utf-8")

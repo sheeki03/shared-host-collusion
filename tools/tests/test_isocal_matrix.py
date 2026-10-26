@@ -15,7 +15,7 @@ def doc(storage_channel: bool) -> dict:
             "meta": {"tool": "tools/iso_calibration.py", "condition": "idle", "platform": "Linux", "protocol_as_declared": True,
                      "docker": {"OperatingSystem": "Ubuntu", "KernelVersion": "6.8", "NCPU": 6, "ContainersRunning": 0},
                      "host_start": {"loadavg": [0.4, 0, 0]}, "host_end": {"loadavg": [0.3, 0, 0]}},
-            "channels": {"memory": ch(64, True), "load": ch(32, False), "pagecache": {"status": "not available"},
+            "channels": {"memory": ch(64, True), "load": ch(32, False), "pagecache": {"status": "not available", "error": {"stage": "setup:probe"}},
                          "storage": ch(46, storage_channel)}}
 
 
@@ -28,5 +28,6 @@ def test_keys_table_and_channel_counts(tmp_path):
     assert res["x.isocal.a.pagecache.channel"] == "not available"
     assert res["x.isocal.channel_runs.storage"] == 1 and res["x.isocal.channel_runs.memory"] == 2
     assert res["x.isocal.b.load_start"] == 0.4 and res["x.isocal.n_runs"] == 2
+    assert res["x.isocal.unavailable_runs.pagecache"] == 2 and res["x.isocal.a.pagecache.stage"] == "setup:probe"
     md = (tmp_path / "o" / "tables" / "isocal_matrix.md").read_text()
-    assert md.count("\n") == 6 and "not available" in md and "labelled idle, load 0.4 → 0.3" in md
+    assert md.count("\n") == 6 and "not available (failed at setup:probe)" in md and "labelled idle, load 0.4 → 0.3" in md
