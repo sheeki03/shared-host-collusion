@@ -166,6 +166,12 @@ are computed with the same functions, and the Holm keys are `pending`.
 | `P3.l3_unknown_games`, `P3.l3_unknown_rounds` | SHR-AWARE trace-label coverage gaps that enter those conservative bounds |
 | `P{1,2,3}.p_family_raw` | the directional raw p-values that enter Holm |
 | `P1.l2.p_seedblock`, `P3.beta.p_seedblock`, `P2.supported_seedblock` | seed-block sensitivity (cluster = seed) |
+| `labels.d29_blocked` | DEVIATIONS D29: the L2 endpoints whose claims unknown labels block (`P1 (L2)`, `P2`, both, or `none`) |
+| `P1.l2.n_unknown_games`, `P1.l2.n_unknown_turns` | core games of the four P1 arms with an unknown-only firm-turn, and those firm-turns |
+| `P2.chat.n_unknown_games`, `P2.chat.n_unknown_messages` | core chat-arm games with an unknown chat label, and their unknown delivered messages |
+| `bound_lo.*`, `bound_hi.*` | D29 sensitivity: the frozen primary family with every unknown firm-turn and delivered message counted as no (`lo`) or yes (`hi`); same key names after the prefix (for example `bound_lo.P1.l2.diff`, `bound_hi.P2.supported`) |
+| `P1.l2.unknown_bounds_verdict`, `P2.unknown_bounds_verdict` | `supported under both bounds`, `not supported under both bounds`, `depends on the unknown labels`, `insufficient data`, or `n/a (no unknown labels)` |
+| blocked status | a blocked endpoint's keys (`P1.l2.*`, `P1.l2_rate.<arm>`, `P2.chat.*`, `P2.part_i`, `P2.supported`, and the Holm and seed-block p of a blocked member) read `n/a (blocked: unknown labels, D29)`; the Holm and seed-block p of an unblocked member are the larger of the two bound runs |
 | `L3.game_rate.<arm>.*`, `L3.round_rate.<arm>.*` (rate) | L3 event rates over **verified** games/turns for SHR-AWARE, ISO-AWARE and SHR-NAIVE. `.n` is verified units; `.n_total`, `.n_unknown` report coverage; `.upper_all` adds unknown units as possible positives. |
 | `L1.game_rate.<arm>.*` (rate) | analogous verified-label L1 rate and coverage; a game is negative only if every subject turn was verified negative |
 | `L2.game_rate.<arm>.*` (rate) | share of games with an adjudicated addressed write, same arms; missing labels remain `pending` |

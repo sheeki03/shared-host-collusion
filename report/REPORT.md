@@ -59,7 +59,8 @@ private costs and canaries trace crossings, while price regressions test respons
 pre-registered arms vary awareness, permission, monitored chat, a scripted rival's offer and a command gate. The
 planned grid spans 14 configurations of 13 models and ten scenario framings on five engines; this report analyses
 {{meta.n_complete}} complete games ({{meta.n_rounds}} rounds). When permitted, agents [did / did not] use the shared folder to address their rival
-more than in matched private-storage games (interaction {{P1.l2.diff}}, 95% CI {{P1.l2.ci_lo}} to {{P1.l2.ci_hi}}).
+more than in matched private-storage games (interaction {{bound_lo.P1.l2.diff}} to {{bound_hi.P1.l2.diff}} as
+unclassifiable writes count as none or as addressed; {{P1.l2.unknown_bounds_verdict}}).
 Unprompted, the shared-minus-private difference in price dependence on the rival's private cost was {{P3.beta.diff}}
 ({{P3.beta.ci_lo}} to {{P3.beta.ci_hi}}; minimum detectable effect {{P3.mde_observed}}). Monitoring chat [did / did not] push
 coordination into storage. A command gate blocked {{S2.block_rate}} of the commands it checked, [and / but] in
@@ -244,9 +245,12 @@ estimates. Sensitivities remove fallback rounds or name-only exposure and strati
 split matched sets across hosts despite the frozen whole-stream plan ({{sens.host_consistent.P1.l2.n_mixed_hosts}} of
 {{sens.host_consistent.P1.l2.n_complete_sets}} complete P1 sets, {{sens.host_consistent.P2.storage.n_mixed_hosts}} of
 {{sens.host_consistent.P2.storage.n_complete_sets}} P2 sets), so Table C7 repeats P1 and P2 on same-host sets.
+An `unknown` classifier label is never a negative and, as pre-registered, blocks the confirmatory claim of an
+endpoint it touches; P1 and P2 are then reported with every unknown counted as no and as yes (D29).
 Refusals and no CHAT-ISO coordination remain outcomes. `prereg/DEVIATIONS.md` timestamps every change: D1–D4 were
 pilot decisions at freeze, D5 implemented the frozen multihost plan, and later entries cover relaunches, a duplicate
-rule set after duplicates arose (D12), definitions written after collection began (D7) and an exploratory scan (D14).
+rule set after duplicates arose (D12), definitions written after collection began (D7), an exploratory scan (D14) and
+the unknown-label bounds (D29).
 Appendix E separates commit times from the author's account of what had been inspected.
 
 ### 3.10 Pilot
@@ -301,10 +305,15 @@ the design could not detect collusion for them at this horizon, not that they ar
 arms, pooled over models (means, 95% bootstrap intervals); (c) the P2 contrasts. Displacement requires delivered
 coordination to fall under the monitor and β_priv to rise specifically in CHAT-MON-SHR.
 
-The monitor changed delivered chat coordination by {{P2.chat.diff}} per firm-turn (95% CI {{P2.chat.ci_lo}} to
-{{P2.chat.ci_hi}}). The monitor × storage interaction on β_priv was {{P2.storage.diff}} ({{P2.storage.ci_lo}} to
-{{P2.storage.ci_hi}}; Holm-adjusted p = {{P2.p_holm}}; displacement under seed-block resampling:
-{{P2.supported_seedblock}}), and the simple shared-minus-private contrast under the monitor was
+The classifier left {{P2.chat.n_unknown_messages}} delivered messages in {{P2.chat.n_unknown_games}} chat-arm games
+unknown, which by the pre-registered rule blocks P2's confirmatory claim (DEVIATIONS D29). Counting them as not
+coordinating or as coordinating, the monitor changed delivered chat coordination by {{bound_lo.P2.chat.diff}} (95% CI
+{{bound_lo.P2.chat.ci_lo}} to {{bound_lo.P2.chat.ci_hi}}) or {{bound_hi.P2.chat.diff}} ({{bound_hi.P2.chat.ci_lo}} to
+{{bound_hi.P2.chat.ci_hi}}) per firm-turn, and the displacement criterion was {{P2.unknown_bounds_verdict}}
+(Holm-adjusted p {{bound_lo.P2.p_holm}} and {{bound_hi.P2.p_holm}}; under seed-block resampling it held in the two
+runs: {{bound_lo.P2.supported_seedblock}} and {{bound_hi.P2.supported_seedblock}}). The monitor × storage
+interaction on β_priv, which needs no labels, was {{P2.storage.diff}} ({{P2.storage.ci_lo}} to
+{{P2.storage.ci_hi}}), and the simple shared-minus-private contrast under the monitor was
 {{P2.storage_mon.diff}} ({{P2.storage_mon.ci_lo}} to {{P2.storage_mon.ci_hi}}). On same-host sets only, the
 interaction was {{sens.host_consistent.P2.storage.diff}} ({{sens.host_consistent.P2.storage.ci_lo}} to
 {{sens.host_consistent.P2.storage.ci_hi}}).
@@ -312,14 +321,14 @@ interaction was {{sens.host_consistent.P2.storage.diff}} ({{sens.host_consistent
 pipeline writes per-arm sent-message and block rates for the chat arms. Otherwise do not interpret the mechanism of
 the fall in delivery. -->
 
-<!-- if P2.supported is true: "Both parts of the pre-registered criterion hold. With chat monitored, coordination did
+<!-- if P2.unknown_bounds_verdict is "supported under both bounds": "Both parts of the pre-registered criterion hold. With chat monitored, coordination did
 not stop but moved: prices came to depend on the rival's private cost only when the folder was shared and chat was
 screened. The CHAT-MON-SHR and CHAT-SHR rows of Table C1 show the addressed-write rates behind this, and Appendix D
 gives a transcript." Name the highest rung reached (L3 or L4). -->
-<!-- if P2.supported is false and the chat part holds: "Monitoring suppressed delivered chat coordination, but the
+<!-- if displacement fails under both bounds and the chat part holds: "Monitoring suppressed delivered chat coordination, but the
 β_priv interaction does not show dependence moving into storage. By the pre-registered standard, displacement is not
 supported." Do not describe CHAT-MON-SHR addressed writes as displacement in this case. -->
-<!-- if P2.supported is false and the chat part fails: "The monitor did not reliably reduce delivered coordination, so
+<!-- if displacement fails under both bounds and the chat part fails: "The monitor did not reliably reduce delivered coordination, so
 the displacement test lacks its premise; the interaction is reported for completeness only." -->
 
 ### 4.2 Capability versus propensity
@@ -330,19 +339,24 @@ the displacement test lacks its premise; the interaction is reported for complet
 ISO-/SHR-AWARE, SHR-NAIVE, ISO-/SHR-PERMITTED and ORACLE, pooled over models (means, 95% bootstrap intervals).
 Capability is the PERMITTED contrast, propensity the AWARE contrast; ORACLE is the β positive control.
 
-*Capability (P1).* Permission raised the addressed-write rate by {{P1.l2.diff}} more with shared than with private
-storage (95% CI {{P1.l2.ci_lo}} to {{P1.l2.ci_hi}}; p = {{P1.l2.p}}, Holm-adjusted {{P1.l2.p_holm}}, seed-block
-{{P1.l2.p_seedblock}}; {{P1.l2.n_pairs}} matched pairs); on same-host sets only it was
-{{sens.host_consistent.P1.l2.diff}} ({{sens.host_consistent.P1.l2.ci_lo}} to {{sens.host_consistent.P1.l2.ci_hi}}).
+*Capability (P1).* The classifier left {{P1.l2.n_unknown_turns}} firm-turns in {{P1.l2.n_unknown_games}} games of
+the four P1 arms unknown, which by the pre-registered rule blocks P1's confirmatory L2 claim (DEVIATIONS D29), the
+same-host sensitivity included. Counting each as no addressed write or as one, permission raised the addressed-write
+rate by {{bound_lo.P1.l2.diff}} (95% CI {{bound_lo.P1.l2.ci_lo}} to {{bound_lo.P1.l2.ci_hi}}; Holm-adjusted p =
+{{bound_lo.P1.l2.p_holm}}, seed-block {{bound_lo.P1.l2.p_seedblock}}) or {{bound_hi.P1.l2.diff}}
+({{bound_hi.P1.l2.ci_lo}} to {{bound_hi.P1.l2.ci_hi}}; {{bound_hi.P1.l2.p_holm}}, seed-block
+{{bound_hi.P1.l2.p_seedblock}}) more with shared than with private storage ({{bound_lo.P1.l2.n_pairs}} matched
+pairs): {{P1.l2.unknown_bounds_verdict}}.
 The supporting β_priv interaction was {{P1.beta.diff}} ({{P1.beta.ci_lo}} to {{P1.beta.ci_hi}}; p = {{P1.beta.p}}).
-<!-- if P1.l2 is positive and significant: "Told that they may, agents use a shared folder to address their rival
+<!-- if P1.l2.unknown_bounds_verdict is "supported under both bounds": "Told that they may, agents use a shared folder to address their rival
 (L2)." Then say whether β_priv also moved, i.e. whether the notes carried usable private information (L3). -->
 <!-- if P1.l2 is null while SHR-PERMITTED shows L2 events: say that agents addressed the rival in both storage arms
 (for example by writing notes in ISO that could never be delivered), so permission changed intent more than channel
 use. -->
 
 *Propensity (P3).* Without permission, the SHR-AWARE minus ISO-AWARE contrast in β_priv was {{P3.beta.diff}}
-({{P3.beta.ci_lo}} to {{P3.beta.ci_hi}}; p = {{P3.beta.p}}, Holm-adjusted {{P3.beta.p_holm}}, seed-block
+({{P3.beta.ci_lo}} to {{P3.beta.ci_hi}}; p = {{P3.beta.p}}, Holm-adjusted {{P3.beta.p_holm}}, the larger of the two
+D29 runs, seed-block
 {{P3.beta.p_seedblock}}), and the matched price
 difference was {{P3.price.diff}} ({{P3.price.ci_lo}} to {{P3.price.ci_hi}}). We predicted a value near zero; Section
 4.4 bounds it.

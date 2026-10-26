@@ -1384,3 +1384,35 @@ def test_mean_ci_leaves_out_unknown_values_in_nullable_columns():
     m, lo, hi, n = ro.mean_ci(vals, np.random.default_rng(0), n_boot=200)
     assert n == 2 and m == pytest.approx(0.75) and lo <= m <= hi
     assert ro.mean_ci(pd.Series([pd.NA], dtype="Float64"), np.random.default_rng(0))[3] == 0
+
+
+def test_unknown_labels_block_l2_endpoints_and_give_declared_bounds(synthetic, tmp_path):
+    """DEVIATIONS D29: unknown labels in the P1 and chat arms block those claims (never negatives); the frozen family
+    runs on both completed label sets; P3 keeps its estimate and takes the larger Holm p."""
+    cands = dataset.load(str(synthetic.tmp), cohort="confirmatory")["candidates"]
+    pick = set(cands[cands["game_id"].str.contains(":SHR-PERMITTED:1000") & (cands["kind"] == "scratch_event")]
+               ["candidate_id"].head(3)) | set(cands[cands["game_id"].str.contains(":CHAT-SHR:1001")
+                                                     & (cands["kind"] == "chat")]["candidate_id"].head(2))
+    sheet = pd.read_csv(synthetic.sheet, dtype=str, keep_default_na=False)
+    sheet.loc[sheet["candidate_id"].isin(pick), "label"] = "unknown"
+    path = synthetic.tmp / "labels_unknown.csv"
+    sheet.to_csv(path, index=False)
+    r = ro.run(ro.Config(**{**synthetic.cfg.__dict__, "labels": str(path), "out": str(tmp_path / "u"),
+                            "figures": False}))
+    assert r["meta.preliminary"] is False
+    for k in ("P1.l2.diff", "P1.l2.p_holm", "P1.l2.p_seedblock", "P2.chat.diff", "P2.supported", "P2.p_holm"):
+        assert r[k] == ro.BLOCKED, k
+    sc = cands[cands["candidate_id"].isin(pick) & (cands["kind"] == "scratch_event")]
+    ch = cands[cands["candidate_id"].isin(pick) & (cands["kind"] == "chat")]
+    assert r["P1.l2.n_unknown_games"] == sc["game_id"].nunique() >= 1
+    assert r["P1.l2.n_unknown_turns"] == len(sc.drop_duplicates(["game_id", "t", "firm"]))
+    assert r["P2.chat.n_unknown_games"] == ch["game_id"].nunique() >= 1
+    assert r["P2.chat.n_unknown_messages"] == int((ch["delivered"] == True).sum())  # noqa: E712
+    assert r["labels.d29_blocked"] == "P1 (L2), P2"
+    lo, hi = r["bound_lo.P1.l2.diff"], r["bound_hi.P1.l2.diff"]
+    assert isinstance(lo, float) and isinstance(hi, float) and lo <= hi
+    assert r["P1.l2.unknown_bounds_verdict"] in ro.BOUND_VERDICTS
+    assert r["P2.unknown_bounds_verdict"] in ro.BOUND_VERDICTS
+    assert isinstance(r["P3.beta.diff"], float) and r["P3.beta.diff"] == synthetic.res["P3.beta.diff"]
+    assert r["P3.beta.p_holm"] == max(r["bound_lo.P3.beta.p_holm"], r["bound_hi.P3.beta.p_holm"])
+    assert r["P1.l2_rate.SHR-PERMITTED"] == ro.BLOCKED and isinstance(r["P1.l2_rate.SHR-AWARE.rate"], float)

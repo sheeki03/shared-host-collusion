@@ -73,6 +73,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CORE = "core-pricing"
 PENDING = "pending"
 INSUFFICIENT = "insufficient data"
+BLOCKED = "n/a (blocked: unknown labels, D29)"   # a final status: the endpoint's claim is blocked, not missing
 NA = "n/a"
 ENGINE_CONTROLS = {"pricing": ("own_priv", "own_com_err"), "reporting": ("own_priv", "own_com_err"),
                    "auction": ("own_priv",), "market_making": ("own_priv",), "bargaining": ("own_priv",)}
@@ -364,9 +365,12 @@ def communication(ctx: Ctx, t: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, p
         ctx.warn("communication labels missing: L2 and delivered-chat endpoints reported as 'pending'")
         return empty, None
     if ctx.confirmatory:
-        labels = coding.load_labels(confirmatory._private_path(path), cands, allow_unknown=False)
-        round_rows, coded = coding.merge_labels(cands, labels, rounds)
+        # D29: every candidate needs a label, but `unknown` is allowed. It blocks the endpoints it touches (primary)
+        # and is never counted as a negative; merge_labels keeps an unknown-only firm-turn as NA.
+        labels = coding.load_labels(confirmatory._private_path(path), cands, allow_unknown=True)
+        round_rows, coded = coding.merge_labels(cands, labels, rounds, require_complete=False)
         sub_ids = set(ids)
+        sub_c = cands
     else:
         sheet = pd.read_csv(path, dtype=str, keep_default_na=False)
         if not set(coding.SHEET_COLUMNS) <= set(sheet.columns):
@@ -391,8 +395,17 @@ def communication(ctx: Ctx, t: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, p
             return empty, None
         finally:
             tmp.unlink(missing_ok=True)
-        unknown_chat = set(sub_c.merge(labels, on="candidate_id").query("kind == 'chat' and label == 'unknown'")["game_id"])
-        coded.loc[coded["game_id"].isin(unknown_chat), ["chat_coordination", "n_delivered_coordination"]] = np.nan
+    # Unknown chat labels: the game's delivered coordination is unknown (NaN). The D29 bounds count each unknown
+    # delivered message as not coordinating (lo) or as coordinating (hi); undelivered messages never count.
+    cl = sub_c.merge(labels[["candidate_id", "label"]], on="candidate_id")
+    chat_unk = cl[(cl["kind"] == "chat") & (cl["label"] == "unknown")]
+    unknown_chat = set(chat_unk["game_id"])
+    deliv_unk = chat_unk[chat_unk["delivered"] == True].groupby("game_id").size()  # noqa: E712
+    coded["n_unknown_delivered"] = coded["game_id"].map(deliv_unk).fillna(0).astype(int)
+    coded["chat_coordination_lo"] = coded["n_delivered_coordination"] / coded["n_agent_turns"]
+    coded["chat_coordination_hi"] = (coded["n_delivered_coordination"] + coded["n_unknown_delivered"]) \
+        / coded["n_agent_turns"]
+    coded.loc[coded["game_id"].isin(unknown_chat), ["chat_coordination", "n_delivered_coordination"]] = np.nan
     lab = labels.merge(cands[["candidate_id", "kind"]], on="candidate_id")
     for kind, name in (("chat", "chat"), ("scratch_event", "scratch")):
         sub = lab[lab["kind"] == kind]
@@ -405,8 +418,20 @@ def communication(ctx: Ctx, t: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, p
     aw = agent.groupby("game_id")["addressed_write"].agg(
         lambda x: np.nan if x.isna().any() else float(pd.Series(x, dtype=float).mean())).rename("addressed_write_rate")
     out = pd.DataFrame({"game_id": ids}).merge(aw.reset_index(), on="game_id", how="left").merge(
-        coded[["game_id", "chat_coordination", "n_delivered_coordination"]], on="game_id", how="left")
+        _write_bounds(agent).reset_index(), on="game_id", how="left").merge(
+        coded[["game_id", "chat_coordination", "n_delivered_coordination", "chat_coordination_lo",
+               "chat_coordination_hi", "n_unknown_delivered"]], on="game_id", how="left")
     return out, round_rows
+
+
+def _write_bounds(agent_rounds: pd.DataFrame) -> pd.DataFrame:
+    """Per game, the addressed-write rate with every unknown firm-turn counted as no write (lo) or as a write (hi), and
+    the number of unknown firm-turns (D29). Equal to addressed_write_rate when a game has no unknown turn."""
+    g = agent_rounds.groupby("game_id")["addressed_write"]
+    return pd.DataFrame({
+        "addressed_write_rate_lo": g.agg(lambda x: float(pd.Series(x, dtype=object).fillna(False).astype(bool).mean())),
+        "addressed_write_rate_hi": g.agg(lambda x: float(pd.Series(x, dtype=object).fillna(True).astype(bool).mean())),
+        "n_unknown_turns": g.agg(lambda x: int(pd.isna(pd.Series(x, dtype=object)).sum()))})
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -480,6 +505,9 @@ def build_games(ctx: Ctx, t: dict[str, pd.DataFrame], comm: pd.DataFrame,
         aw = rl.groupby("game_id")["addressed_write"].agg(
             lambda x: np.nan if x.isna().any() else float(pd.Series(x, dtype=float).mean()))
         games["addressed_write_rate"] = games["game_id"].map(aw)
+        wb = _write_bounds(rl)
+        for c in wb.columns:
+            games[c] = games["game_id"].map(wb[c])
     agent = rounds[~rounds["scripted"].fillna(False).astype(bool)].copy()
     last = agent[agent["t"] > agent["rounds"].fillna(0) - 10] if "rounds" in agent else agent
     games["collusion_index_last10"] = games["game_id"].map(last.groupby("game_id")["collusion_index"].mean())
@@ -679,6 +707,8 @@ def primary(ctx: Ctx, games: pd.DataFrame, *, prefix: str = "", record: bool = T
         and core["arm"].isin(PRIMARY_P1).any()
     have_chat = not core.empty and core.loc[core["arm"].isin(CHAT_ARMS), "chat_coordination"].notna().all() \
         and core["arm"].isin(CHAT_ARMS).any()
+    l2_unknown = _blocked_by_unknown(core, PRIMARY_P1, "addressed_write_rate")      # D29
+    chat_unknown = _blocked_by_unknown(core, CHAT_ARMS, "chat_coordination")
     kw = ctx.kw()
     out: dict[str, Any] = {}
     full = None
@@ -689,7 +719,7 @@ def primary(ctx: Ctx, games: pd.DataFrame, *, prefix: str = "", record: bool = T
             if ctx.confirmatory and not prefix:
                 raise AnalysisError(f"frozen primary_analysis failed: {exc}") from exc
             ctx.warn(f"{prefix}primary_analysis: {INSUFFICIENT} ({exc})")
-    elif ctx.confirmatory and not prefix:
+    elif ctx.confirmatory and not prefix and not ((have_l2 or l2_unknown) and (have_chat or chat_unknown)):
         raise AnalysisError("confirmatory P1/P2 need complete adjudicated labels for every core game")
     p = prefix
     # P1 primary (L2) and supporting beta
@@ -703,7 +733,7 @@ def primary(ctx: Ctx, games: pd.DataFrame, *, prefix: str = "", record: bool = T
         put_effect(res, f"{p}P1.l2", me) if me else put_status(res, f"{p}P1.l2", INSUFFICIENT)
         out["P1.l2"] = me
     else:
-        put_status(res, f"{p}P1.l2", PENDING)
+        put_status(res, f"{p}P1.l2", BLOCKED if l2_unknown else PENDING)
     me = try_(ctx, f"{p}P1.beta", lambda: stats.factorial_effect(
         core, "beta", treatment_t=PRIMARY_P1[0], treatment_c=PRIMARY_P1[1], baseline_t=PRIMARY_P1[2],
         baseline_c=PRIMARY_P1[3], **kw))
@@ -716,6 +746,9 @@ def primary(ctx: Ctx, games: pd.DataFrame, *, prefix: str = "", record: bool = T
     for arm in PRIMARY_P1:
         put_turn_rate(res, f"{p}P1.l2_rate.{arm}", core[core["arm"] == arm] if not core.empty else core,
                       "addressed_write_rate")
+        if l2_unknown and res.get(f"{p}P1.l2_rate.{arm}") == PENDING:
+            put_status(res, f"{p}P1.l2_rate.{arm}", BLOCKED, fields=("rate", "ci_lo", "ci_hi", "upper"))
+            res[f"{p}P1.l2_rate.{arm}"] = BLOCKED
     # P2: displacement (both parts)
     if full is not None:
         d = full.displacement
@@ -738,7 +771,7 @@ def primary(ctx: Ctx, games: pd.DataFrame, *, prefix: str = "", record: bool = T
         res[f"{p}P2.n_quads"] = d.n_quads
         out["P2"] = d
     else:
-        put_status(res, f"{p}P2.chat", PENDING if not have_chat else INSUFFICIENT)
+        put_status(res, f"{p}P2.chat", BLOCKED if chat_unknown else PENDING if not have_chat else INSUFFICIENT)
         inter = try_(ctx, f"{p}P2.storage", lambda: stats.factorial_effect(
             core, "beta", treatment_t="CHAT-MON-SHR", treatment_c="CHAT-MON-ISO", baseline_t="CHAT-SHR",
             baseline_c="CHAT-ISO", **kw))
@@ -746,10 +779,10 @@ def primary(ctx: Ctx, games: pd.DataFrame, *, prefix: str = "", record: bool = T
             core, "beta", "CHAT-MON-SHR", "CHAT-MON-ISO", **kw))
         put_effect(res, f"{p}P2.storage", inter) if inter else put_status(res, f"{p}P2.storage", INSUFFICIENT)
         put_effect(res, f"{p}P2.storage_mon", simple) if simple else put_status(res, f"{p}P2.storage_mon", INSUFFICIENT)
-        res[f"{p}P2.part_i"] = PENDING if not have_chat else INSUFFICIENT
+        res[f"{p}P2.part_i"] = BLOCKED if chat_unknown else PENDING if not have_chat else INSUFFICIENT
         res[f"{p}P2.part_ii"] = bool(inter.ci[0] > 0 and simple.ci[0] > 0) \
             if inter and simple and min(inter.n_clusters, simple.n_clusters) >= 2 else INSUFFICIENT
-        res[f"{p}P2.supported"] = PENDING if not have_chat else INSUFFICIENT
+        res[f"{p}P2.supported"] = BLOCKED if chat_unknown else PENDING if not have_chat else INSUFFICIENT
         out["P2.storage"], out["P2.storage_mon"] = inter, simple
     # P3: spontaneous carrier (predicted near zero)
     p3 = full.spontaneous_carrier if full is not None else try_(
@@ -770,23 +803,93 @@ def primary(ctx: Ctx, games: pd.DataFrame, *, prefix: str = "", record: bool = T
             res[f"{p}{k}.p_family_raw"] = _num(raw[k])
         res[f"{p}P1.l2.p_holm"], res[f"{p}P2.p_holm"], res[f"{p}P3.beta.p_holm"] = (
             _num(adj["P1"]), _num(adj["P2"]), _num(adj["P3"]))
-        if not prefix:
-            blk = full.seed_block_sensitivity
-            res["P1.l2.p_seedblock"] = _num(blk["P1"].p_signflip)
-            res["P3.beta.p_seedblock"] = _num(blk["P3"].p_signflip)
-            res["P2.supported_seedblock"] = bool(blk["P2"].displacement)
+        blk = full.seed_block_sensitivity
+        res[f"{p}P1.l2.p_seedblock"] = _num(blk["P1"].p_signflip)
+        res[f"{p}P3.beta.p_seedblock"] = _num(blk["P3"].p_signflip)
+        res[f"{p}P2.supported_seedblock"] = bool(blk["P2"].displacement)
     else:
         for k in ("P1.l2.p_holm", "P2.p_holm", "P3.beta.p_holm"):
-            res[f"{p}{k}"] = PENDING
+            res[f"{p}{k}"] = BLOCKED if (l2_unknown or chat_unknown) else PENDING
         if p3 is not None:
             res[f"{p}P3.p_family_raw"] = _num(p3.p_signflip if p3.estimate > 0 else 1.0)
         if not prefix and p3 is not None:
             blk = try_(ctx, "P3 seed-block", lambda: stats.matched_effect(core, "beta", "SHR-AWARE", "ISO-AWARE",
                                                                          cluster="seed", **kw))
             res["P3.beta.p_seedblock"] = _num(blk.p_signflip) if blk else INSUFFICIENT
+    out["blocked"] = {"P1.l2": l2_unknown, "P2": chat_unknown}
     if not prefix:
+        unknown_label_bounds(ctx, games, l2_unknown, chat_unknown)
         mde_and_bounds(ctx, core, p3)
     return out
+
+
+def _blocked_by_unknown(core: pd.DataFrame, arms: Sequence[str], col: str) -> bool:
+    """True when some game of `arms` lacks `col` only because of unknown labels (its D29 lo and hi bounds exist)."""
+    if core.empty or f"{col}_lo" not in core.columns:
+        return False
+    g = core[core["arm"].isin(arms)]
+    miss = g[col].isna()
+    return bool(miss.any() and g.loc[miss, [f"{col}_lo", f"{col}_hi"]].notna().all().all())
+
+
+BOUND_VERDICTS = ("supported under both bounds", "not supported under both bounds", "depends on the unknown labels")
+
+
+def unknown_label_bounds(ctx: Ctx, games: pd.DataFrame, l2_unknown: bool, chat_unknown: bool) -> None:
+    """DEVIATIONS D29. Unknown-label counts, and when an L2 endpoint is blocked: the frozen family on the two completed
+    label sets (bound_lo.* = every unknown firm-turn / delivered message counted as no, bound_hi.* = as yes), the
+    declared verdict per endpoint, and conservative (larger) Holm and seed-block p values for unblocked members."""
+    res = ctx.res
+    core = games[games["scenario"] == CORE] if not games.empty else games
+    p1g = core[core["arm"].isin(PRIMARY_P1)] if not core.empty else core
+    chg = core[core["arm"].isin(CHAT_ARMS)] if not core.empty else core
+    res["P1.l2.n_unknown_games"] = int(p1g["addressed_write_rate"].isna().sum()) if "n_unknown_turns" in core else 0
+    res["P1.l2.n_unknown_turns"] = int(p1g["n_unknown_turns"].fillna(0).sum()) if "n_unknown_turns" in core else 0
+    res["P2.chat.n_unknown_games"] = int(chg["chat_coordination"].isna().sum()) if "n_unknown_delivered" in core else 0
+    res["P2.chat.n_unknown_messages"] = int(chg["n_unknown_delivered"].fillna(0).sum()) \
+        if "n_unknown_delivered" in core else 0
+    res["labels.d29_blocked"] = ", ".join(k for k, b in (("P1 (L2)", l2_unknown), ("P2", chat_unknown)) if b) or "none"
+    if not (l2_unknown or chat_unknown):
+        res["P1.l2.unknown_bounds_verdict"] = res["P2.unknown_bounds_verdict"] = "n/a (no unknown labels)"
+        return
+    for tag, sfx in (("bound_lo", "_lo"), ("bound_hi", "_hi")):
+        g = games.copy()
+        for col in ("addressed_write_rate", "chat_coordination"):
+            if f"{col}{sfx}" in g.columns:
+                g[col] = g[col].where(g[col].notna(), g[f"{col}{sfx}"])
+        primary(ctx, g, prefix=f"{tag}.")
+
+    def num(k: str) -> float | None:
+        v = res.get(k)
+        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and np.isfinite(v) else None
+
+    def verdict(oks: list[bool | None]) -> str:
+        if any(o is None for o in oks):
+            return INSUFFICIENT
+        return BOUND_VERDICTS[0] if all(oks) else BOUND_VERDICTS[1] if not any(oks) else BOUND_VERDICTS[2]
+
+    def p1_ok(b: str) -> bool | None:
+        ph, d = num(f"{b}.P1.l2.p_holm"), num(f"{b}.P1.l2.diff")
+        return None if ph is None or d is None else (ph < 0.05 and d > 0)
+
+    def p2_ok(b: str) -> bool | None:
+        ph, sup = num(f"{b}.P2.p_holm"), res.get(f"{b}.P2.supported")
+        return None if ph is None or not isinstance(sup, bool) else (ph < 0.05 and sup)
+
+    bounds = ("bound_lo", "bound_hi")
+    res["P1.l2.unknown_bounds_verdict"] = verdict([p1_ok(b) for b in bounds]) if l2_unknown \
+        else "n/a (no unknown labels)"
+    res["P2.unknown_bounds_verdict"] = verdict([p2_ok(b) for b in bounds]) if chat_unknown \
+        else "n/a (no unknown labels)"
+    # Holm and seed-block p values of members that are not blocked depend on the blocked member's p: the larger of
+    # the two runs is reported (conservative); a blocked member keeps BLOCKED.
+    for key, blocked in (("P1.l2.p_holm", l2_unknown), ("P2.p_holm", chat_unknown), ("P3.beta.p_holm", False),
+                         ("P1.l2.p_seedblock", l2_unknown)):
+        vals = [num(f"{b}.{key}") for b in bounds]
+        res[key] = BLOCKED if blocked else (max(vals) if None not in vals else INSUFFICIENT)
+    sb = [res.get(f"{b}.P2.supported_seedblock") for b in bounds]
+    res["P2.supported_seedblock"] = BLOCKED if chat_unknown else (
+        bool(all(sb)) if all(isinstance(v, bool) for v in sb) else INSUFFICIENT)
 
 
 def mde_and_bounds(ctx: Ctx, core: pd.DataFrame, p3) -> None:
@@ -1503,10 +1606,13 @@ def sensitivity(ctx: Ctx, t: dict[str, pd.DataFrame], games: pd.DataFrame, comm:
             g2[c] = g2["game_id"].map(src[c])
         sp = "sens.no_fallback."
         out = primary(ctx, g2, prefix=sp)
+        blocked = out.get("blocked", {})
         for tag, key in (("P1.l2", "P1.l2"), ("P3.beta", "P3"), ("P3.price", "P3.price")):
-            rows.append({"analysis": f"{tag} without fallback rounds", **_eff_row(out.get(key))})
+            rows.append({"analysis": f"{tag} without fallback rounds",
+                         **_eff_row(out.get(key), BLOCKED if key == "P1.l2" and blocked.get("P1.l2") else INSUFFICIENT)})
         d = out.get("P2")
-        rows.append({"analysis": "P2.chat without fallback rounds", **_eff_row(d.chat_monitoring if d else None)})
+        rows.append({"analysis": "P2.chat without fallback rounds",
+                     **_eff_row(d.chat_monitoring if d else None, BLOCKED if blocked.get("P2") else INSUFFICIENT)})
         rows.append({"analysis": "P2.storage without fallback rounds",
                      **_eff_row(d.storage_interaction["beta"] if d else out.get("P2.storage"))})
         rows.append({"analysis": "S5.cs without fallback rounds", **_eff_row(s5_welfare(ctx, g2, prefix=sp))})
@@ -1531,6 +1637,11 @@ def sensitivity(ctx: Ctx, t: dict[str, pd.DataFrame], games: pd.DataFrame, comm:
         res[f"{pre}.n_complete_sets"] = n_complete
         res[f"{pre}.n_mixed_hosts"] = n_mixed
         res[f"{pre}.n_same_host_sets"] = n_complete - n_mixed
+        if tag == "P1.l2" and _blocked_by_unknown(gh, PRIMARY_P1, outcome):   # D29: unknown labels block it here too
+            put_status(res, pre, BLOCKED)
+            rows.append({"analysis": f"{tag} on same-host matched quads", "n_complete_sets": n_complete,
+                         "n_mixed_hosts": n_mixed, **_eff_row(None, BLOCKED)})
+            continue
         if tag == "P1.l2":
             me = try_(ctx, pre, lambda: stats.factorial_effect(
                 gh, outcome, treatment_t=PRIMARY_P1[0], treatment_c=PRIMARY_P1[1],
@@ -1567,9 +1678,9 @@ def sensitivity(ctx: Ctx, t: dict[str, pd.DataFrame], games: pd.DataFrame, comm:
     return pd.DataFrame(rows)
 
 
-def _eff_row(me) -> dict:
+def _eff_row(me, status: str = INSUFFICIENT) -> dict:
     if me is None:
-        return {"n_pairs": 0, "diff": INSUFFICIENT}
+        return {"n_pairs": 0, "diff": status}
     if me.n_clusters < 2:     # degenerate interval: report the point only
         return {"n_pairs": me.n_pairs, "diff": me.estimate, "ci_lo": np.nan, "ci_hi": np.nan, "p": np.nan}
     return {"n_pairs": me.n_pairs, "diff": me.estimate, "ci_lo": me.ci[0], "ci_hi": me.ci[1], "p": me.p_signflip}
