@@ -16,14 +16,16 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 PY=.venv/bin/python
 HOSTS=(instabox instabox2 instabox3 vps1 vps2)
-LOGS=(runs/full/logs-*)
-LEDGERS=(runs/full/ledger-*.jsonl)
-for h in "${HOSTS[@]}"; do
-  for d in runs/remote/$h/logs-*; do [ -d "$d" ] && LOGS+=("$d"); done
-  for f in runs/remote/$h/ledger-*.jsonl; do [ -f "$f" ] && LEDGERS+=("$f"); done
-done
-EXT_LOGS=()
-for d in runs/ext-remote/*/ext/logs-*; do [ -d "$d" ] && EXT_LOGS+=("$d"); done
+collect() {   # rebuilt before every stage, so files a sync stage just pulled are included
+  LOGS=(runs/full/logs-*)
+  LEDGERS=(runs/full/ledger-*.jsonl)
+  for h in "${HOSTS[@]}"; do
+    for d in runs/remote/$h/logs-*; do [ -d "$d" ] && LOGS+=("$d"); done
+    for f in runs/remote/$h/ledger-*.jsonl; do [ -f "$f" ] && LEDGERS+=("$f"); done
+  done
+  EXT_LOGS=()
+  for d in runs/ext-remote/*/ext/logs-*; do [ -d "$d" ] && EXT_LOGS+=("$d"); done
+}
 # Retired ledgers: launches that ended before finishing (their never-settled reservations are reported, not counted).
 RETIRED=(runs/full/ledger-mac.jsonl runs/remote/vps1/ledger-vps1.jsonl runs/remote/vps2/ledger-vps2.jsonl   # D6
          runs/full/ledger-macv2.jsonl                                                                      # D10
@@ -111,5 +113,5 @@ stage_fill() {
 [ $# -gt 0 ] || { sed -n 2,13p "$0"; exit 2; }
 for s in "$@"; do
   declare -F "stage_$s" >/dev/null || { echo "unknown stage: $s" >&2; exit 2; }
-  echo "== $s $(date +%T)"; "stage_$s"
+  collect; echo "== $s $(date +%T)"; "stage_$s"
 done
