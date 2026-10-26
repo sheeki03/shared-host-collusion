@@ -1,0 +1,30 @@
+{
+ "host": "macv3-gated",
+ "game_ids": [
+  "deep:deepseek-v4-pro:core-pricing:SHR-GATE-SILENT:1003",
+  "deep:gpt-6.1-sol:core-pricing:SHR-GATE-TOLD:1003",
+  "deep:opus-5.5:core-pricing:SHR-GATE-TOLD:1001",
+  "deep:opus-5.5:core-pricing:SHR-GATE-SILENT:1001",
+  "deep:opus-5.5:core-pricing:SHR-GATE-TOLD:1002",
+  "deep:opus-5.5:core-pricing:PROVOC-GATE-TOLD:1002",
+  "deep:opus-5.5:core-pricing:SHR-GATE-SILENT:1002",
+  "deep:opus-5.5:core-pricing:SHR-GATE-TOLD:1003",
+  "deep:opus-5.5:core-pricing:SHR-GATE-SILENT:1003",
+  "pairs:abliterated-large-flash:core-pricing:PROVOC-GATE-TOLD:1000",
+  "pairs:abliterated-large@low:core-pricing:PROVOC-GATE-TOLD:1000",
+  "pairs:abliterated-large@none:core-pricing:PROVOC-GATE-TOLD:1000",
+  "pairs:deepseek-v4.1-flash-1017:core-pricing:PROVOC-GATE-TOLD:1000",
+  "pairs:glm-5.2:core-pricing:PROVOC-GATE-TOLD:1000",
+  "pairs:abliterated-large-flash:core-pricing:PROVOC-GATE-TOLD:1001",
+  "pairs:abliterated-large@low:core-pricing:PROVOC-GATE-TOLD:1001",
+  "pairs:abliterated-large@none:core-pricing:PROVOC-GATE-TOLD:1001",
+  "pairs:deepseek-v4.1-flash-1017:core-pricing:PROVOC-GATE-TOLD:1001",
+  "pairs:glm-5.2:core-pricing:PROVOC-GATE-TOLD:1001",
+  "pairs:abliterated-large-flash:core-pricing:PROVOC-GATE-TOLD:1002",
+  "pairs:abliterated-large@low:core-pricing:PROVOC-GATE-TOLD:1002",
+  "pairs:abliterated-large@none:core-pricing:PROVOC-GATE-TOLD:1002",
+  "pairs:deepseek-v4.1-flash-1017:core-pricing:PROVOC-GATE-TOLD:1002",
+  "pairs:glm-5.2:core-pricing:PROVOC-GATE-TOLD:1002"
+ ],
+ "rounds": 960
+}

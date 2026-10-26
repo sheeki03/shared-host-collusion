@@ -31,6 +31,21 @@ NAMES = {"memory": "Shared memory (`Shmem` in /proc/meminfo)", "load": "Load ave
 LABEL = re.compile(r"^[A-Za-z0-9_]+$")
 
 
+# Kernel flavours that name a distribution or Docker Desktop, not a machine or hosting provider (D36: a provider's
+# kernel suffix is replaced, so no machine or provider name reaches a report output).
+PUBLIC_KERNEL_FLAVOURS = ("generic", "linuxkit", "lowlatency", "virtual", "kvm", "cloud-amd64", "amd64", "arm64")
+
+
+def public_kernel(version):
+    """The kernel version with any non-generic flavour suffix replaced by "(provider build)"."""
+    if not isinstance(version, str) or not version:
+        return version
+    m = re.match(r"^(\d+\.\d+(?:\.\d+)?(?:-\d+)?)(?:-(.+))?$", version)
+    if not m or m.group(2) is None or m.group(2) in PUBLIC_KERNEL_FLAVOURS:
+        return version
+    return f"{m.group(1)} (provider build)"
+
+
 def run_keys(label: str, doc: dict) -> dict:
     meta, out = doc["meta"], {}
     p = f"x.isocal.{label}"
@@ -38,7 +53,7 @@ def run_keys(label: str, doc: dict) -> dict:
     out[f"{p}.condition"] = meta.get("condition")
     out[f"{p}.platform"] = meta.get("platform")
     out[f"{p}.os"] = dk.get("OperatingSystem")
-    out[f"{p}.kernel"] = dk.get("KernelVersion")
+    out[f"{p}.kernel"] = public_kernel(dk.get("KernelVersion"))
     out[f"{p}.cpus"] = dk.get("NCPU")
     out[f"{p}.containers_start"] = dk.get("ContainersRunning")
     out[f"{p}.load_start"] = round(float((meta.get("host_start") or {}).get("loadavg", [float("nan")])[0]), 2)

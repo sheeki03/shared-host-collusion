@@ -8,7 +8,9 @@
 #   handcheck draw the pre-registered hand-check sheet (a person labels runs/analysis/handcheck/handcheck_sheet.csv)
 #   agree     agreement of the filled hand-check sheet
 #   outputs   analysis.report_outputs (confirmatory), then the excerpts by the pre-declared rules
-#   extras    extensions (E1-E5), signalling (E5), A1-A3, the A4 matrix; then tools/merge_results.py
+#   extras    extensions (E1-E5), signalling (E5), A1-A3, the A4 matrix, run concurrently (none reads another's
+#             output, nor report_outputs'), so `extras` may run alongside `judges outputs`
+#   merge     tools/merge_results.py: report_outputs' results plus the extras into runs/analysis/final
 #   fill      appendix from the code, then tools/fill_report.py --confirmatory on the merged results
 # Account spend (cost quantity 3) comes from the owner: ACCOUNT_SPEND_USD and ACCOUNT_SPEND_SOURCE, if set, are passed
 # to report_outputs. Everything writes under runs/analysis/ (git-ignored) and report/*.filled.md.
@@ -89,15 +91,25 @@ stage_outputs() {
 }
 
 stage_extras() {
-  local lg=() cl=() el=()
+  local lg=() cl=() el=() pids=() names=() bad=0 i
   for d in "${LOGS[@]}"; do lg+=(--logs "$d"); cl+=(--confirmatory-logs "$d"); done
   for d in "${EXT_LOGS[@]}"; do el+=(--logs "$d"); done
-  $PY -m analysis.extensions "${el[@]}" "${cl[@]}" --labels runs/analysis/coding-ext/labels.csv --out runs/analysis/ext
-  $PY -m analysis.signalling "${lg[@]}" --cohort confirmatory --out runs/analysis/signal
-  $PY -m analysis.leakage_probe "${lg[@]}" --labels runs/analysis/coding/labels.csv --out runs/analysis/x/leak
-  $PY -m analysis.pathway "${lg[@]}" --labels runs/analysis/coding/labels.csv --out runs/analysis/x/path
-  $PY -m analysis.price_digits "${lg[@]}" --out runs/analysis/x/digits
-  $PY tools/isocal_matrix.py "${CALIB[@]}" --out runs/analysis/isocal
+  mkdir -p runs/analysis/extras-logs
+  run() { local n=$1; shift; "$@" > "runs/analysis/extras-logs/$n.log" 2>&1 & pids+=($!); names+=("$n"); }
+  run ext $PY -m analysis.extensions "${el[@]}" "${cl[@]}" --labels runs/analysis/coding-ext/labels.csv \
+    --out runs/analysis/ext
+  run signal $PY -m analysis.signalling "${lg[@]}" --cohort confirmatory --out runs/analysis/signal
+  run leak $PY -m analysis.leakage_probe "${lg[@]}" --labels runs/analysis/coding/labels.csv --out runs/analysis/x/leak
+  run path $PY -m analysis.pathway "${lg[@]}" --labels runs/analysis/coding/labels.csv --out runs/analysis/x/path
+  run digits $PY -m analysis.price_digits "${lg[@]}" --out runs/analysis/x/digits
+  run isocal $PY tools/isocal_matrix.py "${CALIB[@]}" --out runs/analysis/isocal
+  for i in "${!pids[@]}"; do
+    if wait "${pids[$i]}"; then echo "  ${names[$i]}: ok"; else echo "  ${names[$i]}: FAILED (runs/analysis/extras-logs/${names[$i]}.log)"; bad=1; fi
+  done
+  [ "$bad" = 0 ]
+}
+
+stage_merge() {
   $PY tools/merge_results.py --base runs/analysis/results.json --extra runs/analysis/ext/ext_results.json \
     --extra runs/analysis/signal/signal_results.json --extra runs/analysis/x/leak/x_leak.json \
     --extra runs/analysis/x/path/x_path.json --extra runs/analysis/x/digits/x_digits.json \
@@ -110,7 +122,7 @@ stage_fill() {
   $PY tools/pick_excerpts.py --fill report/APPENDIX.md
 }
 
-[ $# -gt 0 ] || { sed -n 2,13p "$0"; exit 2; }
+[ $# -gt 0 ] || { sed -n 2,15p "$0"; exit 2; }
 for s in "$@"; do
   declare -F "stage_$s" >/dev/null || { echo "unknown stage: $s" >&2; exit 2; }
   collect; echo "== $s $(date +%T)"; "stage_$s"

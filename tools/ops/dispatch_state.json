@@ -1,0 +1,16 @@
+{
+ "claimed": {
+  "spill-1": {
+   "host": "instabox",
+   "at": "23:05:09"
+  },
+  "spill-2": {
+   "host": "instabox",
+   "at": "00:10:01"
+  },
+  "spill-3": {
+   "host": "instabox",
+   "at": "00:40:34"
+  }
+ }
+}

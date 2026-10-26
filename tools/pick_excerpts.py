@@ -227,7 +227,7 @@ class Game:
         m = self.meta
         return [f"*Game `{m.get('game_id')}`: model `{m.get('model_label')}` (`{m.get('model_id')}`, effort "
                 f"{m.get('effort')}), arm `{m.get('arm')}`, scenario `{m.get('scenario_id')}`, seed {m.get('seed')}"
-                + (f", host `{self.r['host']}`" if self.r.get("host") else "")
+                # no machine name in a report output (D32, D36)
                 + f". Selection rule {tier}.{(' ' + extra) if extra else ''}*", ""]
 
     def turn_lines(self, firm: str, t: int, *, only=None) -> list[str]:

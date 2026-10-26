@@ -1,0 +1,24 @@
+{
+ "claimed": {
+  "ext-4": {
+   "host": "vps1",
+   "at": "02:49:12",
+   "ref": "fc223ee"
+  },
+  "ext-2": {
+   "host": "instabox3",
+   "at": "03:16:15",
+   "ref": "fc223ee"
+  },
+  "ext-3": {
+   "host": "vps1",
+   "at": "03:36:41",
+   "ref": "fc223ee"
+  },
+  "ext-1": {
+   "host": "instabox2",
+   "at": "03:43:28",
+   "ref": "fc223ee"
+  }
+ }
+}

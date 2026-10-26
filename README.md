@@ -126,11 +126,17 @@ The four scenario chunks (96, 84, 96 and 84 games) each went to the first free h
 with a $60 cap per chunk. The shard files, the dispatcher and the launch scripts are kept with the run outputs under
 the ignored `runs/` folder (`runs/shards-v2/`, `runs/dispatcher.py`, `runs/deploy_v2.sh`, `runs/launch_remote.sh`).
 
+The as-run copies of these and the other relaunch scripts are committed under `tools/ops/`, with host addresses,
+the remote login and local paths redacted. That folder also holds the recorded shard files, the exclusion lists and
+the dispatcher claim records. `tools/ops/README.md` maps each script to the deviation it implemented (D6, D10, D11,
+D15, D18a, D22, D24, D25, D28 and others). They are a record of what ran, not a supported tool: they expect the
+owner's machines.
+
 With the 6 pre-relaunch games excluded (`runs/done-before-v2.json` in place of `-`), the `make_shards_v2.py` command
 above reproduces the four chunks exactly, but not the core split: it gives 10,280 / 15,960 / 4,360 game-rounds where
-the run used 10,280 / 16,120 / 4,200. The exact assignment requires the recorded shard files under local ignored
-`runs/`; they are not currently in the public repository. The published generator reproduces the design and scenario
-chunks, but not the final operational host assignment. Re-running a seed repeats its exogenous draws, move order and
+the run used 10,280 / 16,120 / 4,200. The exact assignment is in the recorded shard files, committed as run under
+`tools/ops/` (D36). The published generator reproduces the design and scenario chunks, but not the final operational
+host assignment. Re-running a seed repeats its exogenous draws, move order and
 canaries, while stochastic model responses can differ.
 
 The realized assignment is recorded from the logs instead, by `tools/run_manifest.py` ($0, read-only; step 6.2b

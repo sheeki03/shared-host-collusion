@@ -1,0 +1,30 @@
+{
+ "host": "ext-1",
+ "game_ids": [
+  "ext-long:glm-5.3:core-pricing:ISO-AWARE:3000",
+  "ext-long:glm-5.3:core-pricing:ISO-AWARE:3001",
+  "ext-long:glm-5.3:core-pricing:ISO-AWARE:3002",
+  "ext-long:glm-5.3:core-pricing:SHR-AWARE:3000",
+  "ext-long:glm-5.3:core-pricing:SHR-AWARE:3001",
+  "ext-long:glm-5.3:core-pricing:SHR-AWARE:3002",
+  "ext-long:glm-5.3:core-pricing:ISO-PERMITTED:3000",
+  "ext-long:glm-5.3:core-pricing:ISO-PERMITTED:3001",
+  "ext-long:glm-5.3:core-pricing:ISO-PERMITTED:3002",
+  "ext-long:glm-5.3:core-pricing:SHR-PERMITTED:3000",
+  "ext-long:glm-5.3:core-pricing:SHR-PERMITTED:3001",
+  "ext-long:glm-5.3:core-pricing:SHR-PERMITTED:3002",
+  "ext-long:deepseek-v4-pro:core-pricing:ISO-AWARE:3000",
+  "ext-long:deepseek-v4-pro:core-pricing:ISO-AWARE:3001",
+  "ext-long:deepseek-v4-pro:core-pricing:ISO-AWARE:3002",
+  "ext-long:deepseek-v4-pro:core-pricing:SHR-AWARE:3000",
+  "ext-long:deepseek-v4-pro:core-pricing:SHR-AWARE:3001",
+  "ext-long:deepseek-v4-pro:core-pricing:SHR-AWARE:3002",
+  "ext-long:deepseek-v4-pro:core-pricing:ISO-PERMITTED:3000",
+  "ext-long:deepseek-v4-pro:core-pricing:ISO-PERMITTED:3001",
+  "ext-long:deepseek-v4-pro:core-pricing:ISO-PERMITTED:3002",
+  "ext-long:deepseek-v4-pro:core-pricing:SHR-PERMITTED:3000",
+  "ext-long:deepseek-v4-pro:core-pricing:SHR-PERMITTED:3001",
+  "ext-long:deepseek-v4-pro:core-pricing:SHR-PERMITTED:3002"
+ ],
+ "rounds": 2400
+}
