@@ -6,7 +6,8 @@ Usage (repo root, venv python):
   .venv/bin/python tools/sync_logs.py vps1 instabox   # some hosts
   .venv/bin/python tools/sync_logs.py --watch 600     # repeat every 10 minutes until interrupted
 Hosts: every non-null entry of runs/dispatch_hosts.json ({host: ssh destination or alias}; null is the Mac, which is
-not synced), plus vps1 = root@161.97.142.53 and vps2 = root@75.119.141.172 if that file lacks them. The remote repo is
+not synced), with optional overrides in the adjacent git-ignored ssh_hosts.json. Defaults are the SSH aliases vps1
+and vps2; machine addresses belong in local configuration, not this repository. The remote repo is
 addressed home-relative (~/shared-host-collusion), so the /root and /data/home layouts both work.
 Pulled from <remote home>/shared-host-collusion/runs/, for every run tag (v1 "vps1", v2 "vps1v2", overflow chunks
 "<host>-spill-N", anything else the runner names):
@@ -56,7 +57,7 @@ ROOT = Path(__file__).resolve().parent.parent
 REMOTE_BASE = ROOT / "runs" / "remote"
 HOSTS_FILE = ROOT / "runs" / "dispatch_hosts.json"
 REMOTE_RUNS = "shared-host-collusion/runs"  # relative to the remote login directory (rsync/scp/ssh all resolve it so)
-DEFAULT_HOSTS = {"vps1": "root@161.97.142.53", "vps2": "root@75.119.141.172"}
+DEFAULT_HOSTS = {"vps1": "vps1", "vps2": "vps2"}
 SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=15",
             "-o", "ServerAliveCountMax=4"]
 RSYNC_FILTERS = ["--include=/full/", "--include=/full/logs-*/", "--include=/full/logs-*/*.eval",
@@ -79,16 +80,17 @@ def now_iso() -> str:
 
 
 def load_hosts(path: Path = HOSTS_FILE) -> dict[str, str]:
-    """{host: ssh destination}: vps1/vps2 defaults updated by the non-null entries of runs/dispatch_hosts.json."""
+    """SSH aliases, then dispatcher destinations, then adjacent private ssh_hosts.json overrides."""
     hosts = dict(DEFAULT_HOSTS)
-    try:
-        data = json.loads(Path(path).read_text())
-    except (OSError, ValueError):
-        return hosts
-    if isinstance(data, dict):
-        for h, dest in data.items():
-            if isinstance(dest, str) and SAFE_DEST.fullmatch(dest.strip()) and SAFE.fullmatch(str(h)):
-                hosts[str(h)] = dest.strip()
+    for source in (Path(path), Path(path).with_name("ssh_hosts.json")):
+        try:
+            data = json.loads(source.read_text())
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict):
+            for h, dest in data.items():
+                if isinstance(dest, str) and SAFE_DEST.fullmatch(dest.strip()) and SAFE.fullmatch(str(h)):
+                    hosts[str(h)] = dest.strip()
     return hosts
 
 

@@ -232,11 +232,23 @@ def test_validate_eval_rejects_torn_copy_and_scan_reads_good_one(tmp_path):
 # ------------------------------------------------------------------------------------- sync_logs: many tags, hosts
 def test_load_hosts_reads_dispatch_hosts(tmp_path):
     f = tmp_path / "dispatch_hosts.json"
-    f.write_text(json.dumps({"mac": None, "vps1": "root@161.97.142.53", "vps2": "root@75.119.141.172",
+    f.write_text(json.dumps({"mac": None, "vps1": "root@vps1.example", "vps2": "root@vps2.example",
                              "instabox": "instabox", "../evil": "x"}))
-    assert sync_logs.load_hosts(f) == {"vps1": "root@161.97.142.53", "vps2": "root@75.119.141.172",
+    assert sync_logs.load_hosts(f) == {"vps1": "root@vps1.example", "vps2": "root@vps2.example",
                                        "instabox": "instabox"}
     assert sync_logs.load_hosts(tmp_path / "missing.json") == sync_logs.DEFAULT_HOSTS
+
+
+def test_load_hosts_uses_private_overrides_without_a_dispatch_file(tmp_path):
+    f = tmp_path / "dispatch_hosts.json"
+    f.write_text(json.dumps({"vps1": "old-alias", "instabox": "instabox"}))
+    private = tmp_path / "ssh_hosts.json"
+    private.write_text(json.dumps({"vps1": "operator@vps1.example", "vps2": "private-vps2",
+                                   "../evil": "x", "bad": "-oProxyCommand=bad"}))
+    assert sync_logs.load_hosts(f) == {"vps1": "operator@vps1.example", "vps2": "private-vps2",
+                                      "instabox": "instabox"}
+    f.unlink()
+    assert sync_logs.load_hosts(f) == {"vps1": "operator@vps1.example", "vps2": "private-vps2"}
 
 
 def test_classify_paths():

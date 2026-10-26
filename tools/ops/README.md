@@ -7,6 +7,12 @@ in `prereg/DEVIATIONS.md` can be checked against code. They are not a supported 
 machines (ssh aliases `instabox`, `instabox2`, `instabox3`, and VPS-1/VPS-2 by address) and were run from the repo
 root as `runs/<name>`, which is why their paths say `runs/...`. Several of them start paid model calls. Do not run them.
 
+Current supported sync tools (`tools/sync_logs.py` and `tools/sync_ext.sh`) use logical SSH aliases instead of public
+machine addresses. Configure those aliases in your own SSH configuration, or put a host-to-destination mapping in
+the git-ignored `runs/ssh_hosts.json`, for example `{"vps1": "operator@vps1.example", "vps2": "private-vps2"}`.
+The private mapping overrides `runs/dispatch_hosts.json`; neither file should be published. Existing Git history
+is retained for the experiment's provenance.
+
 The layout follows `runs/`. The top level holds the scripts, the dispatcher host lists and claim records
 (`dispatch_*state.json`), and the exclusion lists of games already complete (`done-*.json`). `shards/`, `shards-v2/`
 and `shards-ext/` hold the recorded shard files. These contain only a run tag and game ids.

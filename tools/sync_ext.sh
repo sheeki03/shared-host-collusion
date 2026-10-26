@@ -12,6 +12,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 mode=sync
 case "${1:-}" in "") ;; --verify) mode=verify ;; *) echo "usage: $0 [--verify]" >&2; exit 2 ;; esac
+# Resolve addresses from the same private host configuration as the main-log sync. A failed lookup exits before
+# any transfer; aliases remain the public defaults, and runs/ssh_hosts.json can override them locally.
+host_rows=$(.venv/bin/python - <<'PY'
+from tools.sync_logs import load_hosts
+hosts = load_hosts()
+for name in ("instabox", "instabox2", "instabox3", "vps1"):
+    print(name, hosts.get(name, name))
+PY
+)
 # the pulled set, relative to ~/shared-host-collusion/runs on the host; the remote command fails if it is empty
 REMOTE='cd ~/shared-host-collusion/runs && p=$(ls -d ext shards/*ext*.json calibration 2>/dev/null);
   [ -n "$p" ] || { echo "nothing to pull: no ext, shards/*ext*.json or calibration in $PWD" >&2; exit 3; }'
@@ -76,12 +85,7 @@ while read -r name dest; do
     fi
   fi
   rm -rf "$tmp"; tmp=""
-done <<HOSTS
-instabox instabox
-instabox2 instabox2
-instabox3 instabox3
-vps1 root@161.97.142.53
-HOSTS
+done <<< "$host_rows"
 if [ -n "$failed" ]; then
   echo "FAILED ($mode):$failed" >&2
   exit 1

@@ -63,7 +63,7 @@ Times are IST. Newest entries at the bottom of each step.
 - **Pre-registration frozen at 47a1c35, 22:23:19 IST** (tag `prereg-freeze`).
 
 ## Step 6 confirmatory runs (from 22:24 IST; ongoing)
-- Machines: the Mac (gated arms; done 00:50), Contabo VPS 161.97.142.53 (done 02:04), the owner's production VPS (retired 00:09 at load 47; site unaffected), three instabox VPS (8/8/4 vCPU).
+- Machines: the Mac (gated arms; done 00:50), Contabo VPS-1 (done 02:04), the owner's production VPS (retired 00:09 at load 47; site unaffected), three instabox VPS (8/8/4 vCPU).
 - Relaunches and rebalancing: D6 (22:46), D10 (23:58), D11 (00:16), D15 (01:31). Network drops on instabox killed about 146 in-flight games (00:37–00:51); fixed by D13 and re-run with the same seeds (D15).
 - 505 of 1,131 games complete at the 01:30 sync (D12 rule: 8 duplicates, first-finished copy kept). Remaining games run on the instabox hosts; ETA about 03:15–03:30 IST.
 - Spend: about $464 real by 02:09; balance $664.55.
@@ -72,7 +72,7 @@ Times are IST. Newest entries at the bottom of each step.
 - Analysis machinery: report_outputs, game_set (D12), llm_coder (pinned rubric), monitors (S6), coding fixes, ledger union reconciliation (D8/D8a).
 - Report draft `report/REPORT.md` (placeholders only for results), `report/APPENDIX.md` (generated), `report/references.bib` (53 BibTeX entries at this review), channel taxonomy (Appendix F), OpenAI Oct 2026 sandbox red-teaming context (D14 scan).
 - Extensions E1–E5 (`prereg/EXTENSIONS.md`, harness D17): replication, 100-round horizon, ISO-ANY, secret exchange, price signalling; 216 games, run after the main grid.
-- Exploratory A1–A4 (`prereg/EXPLORATORY.md`, D16): message leakage probe, note-to-board pathway, price-digit audit, ISO residual-channel calibration (idle run on 161.97.142.53 started 02:04).
+- Exploratory A1–A4 (`prereg/EXPLORATORY.md`, D16): message leakage probe, note-to-board pathway, price-digit audit, ISO residual-channel calibration (idle run on VPS-1 started 02:04).
 - Review page for the owner: https://claude.ai/artifact/VWPxkkiKVfsdVHbmp6bPrd (private).
 
 ## Second-review checkpoint (Mon 26 Oct ~02:28 IST)
