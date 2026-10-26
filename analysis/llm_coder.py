@@ -813,9 +813,12 @@ def _manifest(out: Path, rubric: str, sha: str, extra: Mapping[str, Any]) -> Non
     os.replace(tmp, path)
 
 
+MAX_CAP_USD = 150.0  # admission ceiling for one coder ledger; raised from 50 with the audited cap change of D26
+
+
 def _cmd_label(a: argparse.Namespace) -> None:
-    if not 0 < a.cap <= 50:
-        raise SystemExit("--cap must be in (0, 50] USD")
+    if not 0 < a.cap <= MAX_CAP_USD:
+        raise SystemExit(f"--cap must be in (0, {MAX_CAP_USD:g}] USD")
     try:
         out = check_private_path(a.out, "--out")
         ledger_path = check_coder_ledger(a.ledger)
