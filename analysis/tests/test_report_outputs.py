@@ -1422,6 +1422,7 @@ def test_unknown_labels_block_l2_endpoints_and_give_declared_bounds(synthetic, t
     tab = (tmp_path / "u" / "tables" / "per_arm_rates.md").read_text()
     assert "(unknown labels)" in tab and "| pending |" not in tab
     assert isinstance(r["pc.chat_iso.coord_rate"], float)
+    assert isinstance(r["S4.n_games_unknown_membership"], int) and "D33" in r["S4.subset"]
 
 
 def test_rate_cell_reports_bounds_only_for_unknown_gaps():

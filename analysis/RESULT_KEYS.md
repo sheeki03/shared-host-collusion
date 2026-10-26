@@ -166,6 +166,7 @@ are computed with the same functions, and the Holm keys are `pending`.
 | `P3.l3_unknown_games`, `P3.l3_unknown_rounds` | SHR-AWARE trace-label coverage gaps that enter those conservative bounds |
 | `P{1,2,3}.p_family_raw` | the directional raw p-values that enter Holm |
 | `P1.l2.p_seedblock`, `P3.beta.p_seedblock`, `P2.supported_seedblock` | seed-block sensitivity (cluster = seed) |
+| `S4.n_games_unknown_membership` | D33: core games left out of the S4 subset because their only possible addressed write or delivered coordination is an unknown label |
 | `labels.d29_blocked` | DEVIATIONS D29: the L2 endpoints whose claims unknown labels block (`P1 (L2)`, `P2`, both, or `none`) |
 | `P1.l2.n_unknown_games`, `P1.l2.n_unknown_turns` | core games of the four P1 arms with an unknown-only firm-turn, and those firm-turns |
 | `P2.chat.n_unknown_games`, `P2.chat.n_unknown_messages` | core chat-arm games with an unknown chat label, and their unknown delivered messages |

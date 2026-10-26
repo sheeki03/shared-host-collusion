@@ -998,13 +998,25 @@ def s2_gate(ctx: Ctx, games: pd.DataFrame) -> None:
 def s4_beta(ctx: Ctx, games: pd.DataFrame, rounds: pd.DataFrame) -> None:
     res = ctx.res
     core = games[games["scenario"] == CORE]
-    used = core["transfer_observed"].fillna(False).astype(bool) | (core["addressed_write_rate"].fillna(0) > 0) | \
-        (core["chat_coordination"].fillna(0) > 0)
+    def known(col: str) -> pd.Series:       # D33: a definite yes (the D29 lower bound) when unknown labels remain
+        lo = f"{col}_lo"
+        return (core[col].fillna(core[lo]) if lo in core.columns else core[col]).fillna(0)
+
+    def possible(col: str) -> pd.Series:
+        hi = f"{col}_hi"
+        return (core[col].fillna(core[hi]) if hi in core.columns else core[col]).fillna(0)
+
+    transfer = core["transfer_observed"].fillna(False).astype(bool)
+    used = transfer | (known("addressed_write_rate") > 0) | (known("chat_coordination") > 0)
+    maybe = ~used & ((possible("addressed_write_rate") > 0) | (possible("chat_coordination") > 0))
     ids = set(core.loc[used, "game_id"])
     res["S4.n_games"] = len(ids)
-    labels_ok = core["addressed_write_rate"].notna().all() and core["chat_coordination"].notna().all()
+    res["S4.n_games_unknown_membership"] = int(maybe.sum())
+    bounded = all(f"{c}_lo" in core.columns for c in ("addressed_write_rate", "chat_coordination"))
+    labels_ok = bounded or (core["addressed_write_rate"].notna().all() and core["chat_coordination"].notna().all())
     res["S4.subset"] = ("core games with trace-confirmed transfer, an adjudicated addressed write or delivered chat "
-                        "coordination") if labels_ok else \
+                        "coordination (a yes label; games whose only possible write or message is unknown are left "
+                        "out and counted in S4.n_games_unknown_membership, D33)") if labels_ok else \
         "core games with trace-confirmed transfer only (communication labels pending: subset incomplete)"
     r = rounds[rounds["game_id"].isin(ids)]
     absorb = tuple(c for c in ("model", "arm") if r[c].nunique() > 1) if not r.empty else ()
